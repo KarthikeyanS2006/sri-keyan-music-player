@@ -179,25 +179,30 @@ async def get_playlist(playlist_id: str):
 @app.get("/stream/{video_id}")
 async def stream(video_id: str):
     try:
-        url = f"https://www.youtube.com/watch?v={video_id}"
+        url = f"https://yewtu.be/watch?v={video_id}&format=audio"
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "yt_dlp", "--no-warnings", "-J", url,
+            sys.executable, "-m", "yt_dlp", "--no-warnings", "-g", url,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        output, stderr = await proc.communicate()
+        stream_url, stderr = await proc.communicate()
+        result = stream_url.decode().strip()
         
-        if proc.returncode == 0:
-            data = json.loads(output.decode())
-            formats = data.get("formats", [])
-            for f in formats:
-                if f.get("ext") in ["m4a", "mp3", "webm"] and f.get("url"):
-                    return {"url": f["url"]}
-            for f in formats:
-                if f.get("url") and f.get("acodec") != "none":
-                    return {"url": f["url"]}
+        if proc.returncode == 0 and result.startswith("http"):
+            return {"url": result}
         
-        logger.error(f"yt-dlp error: {stderr.decode()}")
+        url2 = f"https://invidious.projectsegfau.lt/watch?v={video_id}"
+        proc2 = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "yt_dlp", "--no-warnings", "-g", url2,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stream_url2, _ = await proc2.communicate()
+        result2 = stream_url2.decode().strip()
+        
+        if proc2.returncode == 0 and result2.startswith("http"):
+            return {"url": result2}
+        
         return {"error": "Could not get stream URL"}
     except Exception as e:
         logger.error(f"Stream error: {e}")
