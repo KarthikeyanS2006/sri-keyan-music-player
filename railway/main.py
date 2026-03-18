@@ -11,6 +11,7 @@ import imageio_ffmpeg
 from ytmusicapi import YTMusic
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 # Configure yt-dlp to use imageio-ffmpeg
 ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
@@ -187,20 +188,32 @@ async def get_playlist(playlist_id: str):
 async def stream(video_id: str):
     try:
         url = f"https://www.youtube.com/watch?v={video_id}"
+        
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "yt_dlp", "--no-warnings", "--add-header", "Referer:https://www.youtube.com/",
-            "-f", "bestaudio[ext=m4a]/bestaudio", "-g", url,
+            sys.executable, "-m", "yt_dlp", "--no-warnings", "-f", "bestaudio[ext=m4a]/bestaudio",
+            "-o", "-", url,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stream_url, stderr = await proc.communicate()
-        result = stream_url.decode().strip()
         
-        if proc.returncode == 0 and result.startswith("http"):
-            return {"url": result, "referer": "https://www.youtube.com/"}
+        from fastapi.responses import StreamingResponse
         
-        logger.error(f"yt-dlp error: {stderr.decode()}")
-        return {"error": f"Could not get stream: {stderr.decode()[:100]}"}
+        async def generate():
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(proc.stdout.read(65536), timeout=60)
+                    if not chunk:
+                        break
+                    yield chunk
+                except asyncio.TimeoutError:
+                    break
+            await proc.wait()
+        
+        return StreamingResponse(
+            generate(),
+            media_type="audio/mp4",
+            headers={"Content-Disposition": f'inline; filename="{video_id}.m4a"'}
+        )
     except Exception as e:
         logger.error(f"Stream error: {e}")
         return {"error": str(e)}
