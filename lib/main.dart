@@ -1236,7 +1236,8 @@ class _SongTile extends StatelessWidget {
 class MusicApiService {
   static String get _baseUrl {
     if (kIsWeb) {
-      return 'http://localhost:5000';
+      // Change this to your Render URL after deploying
+      return 'https://sri-keyan-music.onrender.com';
     }
     return 'http://localhost:5000';
   }
