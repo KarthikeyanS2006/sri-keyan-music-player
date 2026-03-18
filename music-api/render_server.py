@@ -97,35 +97,58 @@ async def home():
     try:
         logger.info("Fetching home data...")
         charts = ytmusic.get_home(limit=20)
-        logger.info(f"Response type: {type(charts)}")
-        logger.info(f"Charts length: {len(charts) if charts else 'None'}")
-        if charts:
-            logger.info(f"First section keys: {list(charts[0].keys()) if charts else 'N/A'}")
         all_songs = []
         if charts:
             for i, section in enumerate(charts):
-                logger.info(f"Section {i}: {section.get('title', 'untitled')}")
                 contents = section.get("contents", [])
-                logger.info(f"  Contents count: {len(contents)}")
-                for j, item in enumerate(contents):
-                    if isinstance(item, dict) and "musicTwoRowRenderer" in item:
+                for j, item in enumerate(contents[:2]):
+                    logger.info(f"Section {i} item {j} keys: {list(item.keys()) if isinstance(item, dict) else type(item)}")
+        
+        if not charts:
+            return []
+            
+        section = next((s for s in charts if s.get("title") == "Quick picks"), None)
+        if not section:
+            section = charts[2] if len(charts) > 2 else None
+            
+        if section:
+            for item in section.get("contents", []):
+                if isinstance(item, dict):
+                    if "musicTwoRowRenderer" in item:
                         renderer = item["musicTwoRowRenderer"]
                         video_id = renderer.get("title", {}).get("runs", [{}])[0].get("navigationEndpoint", {}).get("watchEndpoint", {}).get("videoId", "")
-                        thumbnail = renderer.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "") if renderer.get("thumbnail", {}).get("thumbnails") else ""
-                        if "lh3.googleusercontent.com" in thumbnail and video_id:
-                            thumbnail = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
-                        title_runs = renderer.get("title", {}).get("runs", [])
-                        title = title_runs[0].get("text", "") if title_runs else ""
-                        subtitle_runs = renderer.get("subtitle", {}).get("runs", [])
-                        artist = " ".join([r.get("text", "") for r in subtitle_runs])
-                        if video_id:
-                            all_songs.append({
-                                "id": video_id,
-                                "title": title,
-                                "artist": artist,
-                                "thumbnail": thumbnail,
-                                "videoId": video_id,
-                            })
+                    elif "musicResponsiveListItemRenderer" in item:
+                        renderer = item["musicResponsiveListItemRenderer"]
+                        video_id = renderer.get("playlistItemData", {}).get("videoId", "")
+                    else:
+                        continue
+                    
+                    thumbnail = ""
+                    for thumb in renderer.get("thumbnail", {}).get("thumbnails", []):
+                        if thumb.get("url"):
+                            thumbnail = thumb["url"]
+                            break
+                    
+                    if "lh3.googleusercontent.com" in thumbnail and video_id:
+                        thumbnail = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
+                    
+                    title = ""
+                    for run in renderer.get("title", {}).get("runs", []):
+                        title += run.get("text", "")
+                    
+                    artist = ""
+                    for run in renderer.get("subtitle", {}).get("runs", []):
+                        artist += run.get("text", "")
+                    
+                    if video_id and title:
+                        all_songs.append({
+                            "id": video_id,
+                            "title": title,
+                            "artist": artist,
+                            "thumbnail": thumbnail,
+                            "videoId": video_id,
+                        })
+        
         logger.info(f"Returning {len(all_songs)} songs")
         return all_songs[:20]
     except Exception as e:
