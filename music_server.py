@@ -212,26 +212,49 @@ def stream(video_id):
     try:
         import yt_dlp
         import tempfile
+        import json
         
-        # Try to read cookies from headers_auth.json
         cookie_file = None
-        if os.path.exists('headers_auth.json'):
+        
+        # Try to read from environment variable first
+        headers_from_env = os.environ.get('YTMUSIC_HEADERS', '')
+        if headers_from_env:
+            try:
+                auth_data = json.loads(headers_from_env)
+                if 'cookie' in auth_data:
+                    cookie_str = auth_data['cookie']
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
+                        cf.write("# Netscape HTTP Cookie File\n")
+                        for cookie in cookie_str.split(';'):
+                            cookie = cookie.strip()
+                            if '=' in cookie:
+                                parts = cookie.split('=')
+                                name = parts[0]
+                                value = '='.join(parts[1:])
+                                cf.write(f".youtube.com\tTRUE\t/\tFALSE\t0\t{name}\t{value}\n")
+                        cookie_file = cf.name
+            except:
+                pass
+        
+        # If no env var, try reading from file
+        if not cookie_file and os.path.exists('headers_auth.json'):
             try:
                 with open('headers_auth.json', 'r', encoding='utf-8') as f:
-                    auth_data = json.load(f)
-                    if 'cookie' in auth_data:
-                        cookie_str = auth_data['cookie']
-                        # Write cookies in Netscape format
-                        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
-                            cf.write("# Netscape HTTP Cookie File\n")
-                            for cookie in cookie_str.split(';'):
-                                cookie = cookie.strip()
-                                if '=' in cookie:
-                                    parts = cookie.split('=')
-                                    name = parts[0]
-                                    value = '='.join(parts[1:])
-                                    cf.write(f".youtube.com\tTRUE\t/\tFALSE\t0\t{name}\t{value}\n")
-                            cookie_file = cf.name
+                    content = f.read()
+                    if content.startswith('{'):
+                        auth_data = json.loads(content)
+                        if 'cookie' in auth_data:
+                            cookie_str = auth_data['cookie']
+                            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
+                                cf.write("# Netscape HTTP Cookie File\n")
+                                for cookie in cookie_str.split(';'):
+                                    cookie = cookie.strip()
+                                    if '=' in cookie:
+                                        parts = cookie.split('=')
+                                        name = parts[0]
+                                        value = '='.join(parts[1:])
+                                        cf.write(f".youtube.com\tTRUE\t/\tFALSE\t0\t{name}\t{value}\n")
+                                cookie_file = cf.name
             except:
                 pass
         
