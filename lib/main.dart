@@ -1234,7 +1234,12 @@ class _SongTile extends StatelessWidget {
 }
 
 class MusicApiService {
-  static const String _baseUrl = 'http://localhost:5000';
+  static String get _baseUrl {
+    if (kIsWeb) {
+      return const String.fromEnvironment('API_URL', defaultValue: 'http://localhost:5000');
+    }
+    return 'http://localhost:5000';
+  }
   
   bool _isConnected = false;
 
@@ -1251,6 +1256,10 @@ class MusicApiService {
 
   Future<List<Song>> getTamilSongs() async {
     await checkConnection();
+    
+    if (!_isConnected) {
+      _showServerNotConnectedSnackbar();
+    }
     
     if (_isConnected) {
       try {
@@ -1272,6 +1281,68 @@ class MusicApiService {
       } catch (_) {}
     }
     return [];
+  }
+
+  void _showServerNotConnectedSnackbar() {
+    if (_showedServerWarning) return;
+    _showedServerWarning = true;
+    
+    Future.delayed(const Duration(seconds: 2), () {
+      if (_allSongs.isEmpty && !_isConnected) {
+        ScaffoldMessenger.of(navigatorKey.currentContext ?? navigatorKey.currentState!.context).showSnackBar(
+          SnackBar(
+            content: const Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Server Not Connected', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 4),
+                Text('Make sure music_server.py is running on your computer'),
+                Text('For mobile access, deploy backend to Render.com'),
+              ],
+            ),
+            backgroundColor: const Color(0xFF1A365D),
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Learn More',
+              textColor: Colors.white,
+              onPressed: _showServerInstructions,
+            ),
+          ),
+        );
+      }
+    });
+  }
+
+  void _showServerInstructions() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: primaryColor,
+        title: const Text('Backend Server Required', style: TextStyle(color: Colors.white)),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('To play songs:', style: TextStyle(color: Colors.white70)),
+            SizedBox(height: 12),
+            Text('1. Run music_server.py on your computer', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('2. Keep your computer on while using the app', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            Text('3. Make sure phone & laptop are on same WiFi', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            SizedBox(height: 12),
+            Text('For permanent mobile access:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            Text('Deploy backend to Render.com (free tier)', style: TextStyle(color: Colors.white60, fontSize: 12)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<List<Song>> searchSongs(String query) async {

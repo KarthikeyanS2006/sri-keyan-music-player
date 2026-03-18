@@ -109,13 +109,47 @@ For Windows:
 flutter run -d windows
 ```
 
+## Cloud Deployment (For Mobile Access)
+
+To access the app on mobile devices, deploy the backend to Render.com:
+
+### Quick Setup:
+
+1. Go to [render.com](https://render.com) → Sign up/Login
+2. Click "New +" → "Web Service"
+3. Connect this repository or upload the `music-api` folder
+4. Configure:
+   - **Name**: `sri-keyan-api`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python render_server.py`
+5. Add Environment Variable: `PORT` = `10000`
+6. Click "Create Web Service"
+
+### Update App:
+
+Once deployed, update `lib/main.dart` line 1237:
+```dart
+static String get _baseUrl {
+  if (kIsWeb) {
+    return const String.fromEnvironment('API_URL', 
+      defaultValue: 'https://YOUR-RENDER-APP.onrender.com');
+  }
+  return 'http://localhost:5000';
+}
+```
+
+See `music-api/README.md` for detailed instructions.
+
 ## Project Structure
 
 ```
 test_app/
 ├── lib/
 │   └── main.dart          # Main Flutter app
-├── music_server.py        # Python backend for YouTube Music API
+├── music_server.py        # Python backend (local)
+├── music-api/             # Backend for cloud deployment
+│   ├── render_server.py
+│   └── requirements.txt
 ├── headers_auth.json      # YouTube Music authentication headers
 ├── pubspec.yaml           # Flutter dependencies
 ├── SETUP.md               # Setup instructions

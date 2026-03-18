@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: sri-keyan-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python render_server.py
+    plan: free
