@@ -213,6 +213,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final TextEditingController _headersController = TextEditingController();
   
   List<Song> _allSongs = [];
   List<Song> _songs = [];
@@ -222,6 +223,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   bool _isLoading = true;
   bool _isSearching = false;
   bool _isBuffering = false;
+  bool _isConnected = false;
+  bool _isSettingUp = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   double _volume = 1.0;
@@ -234,8 +237,46 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSongs();
+    _checkConnection();
     _focusNode.requestFocus();
+  }
+
+  Future<void> _checkConnection() async {
+    final connected = await MusicApiService.checkConnection();
+    if (mounted) {
+      setState(() => _isConnected = connected);
+      if (connected) {
+        _loadSongs();
+      } else {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _setupConnection() async {
+    final headers = _headersController.text.trim();
+    if (headers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter authentication headers')),
+      );
+      return;
+    }
+    
+    setState(() => _isSettingUp = true);
+    
+    final success = await MusicApiService.setup(headers);
+    
+    if (mounted) {
+      setState(() => _isSettingUp = false);
+      if (success) {
+        setState(() => _isConnected = true);
+        _loadSongs();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Setup failed. Check your headers.')),
+        );
+      }
+    }
   }
 
   Future<void> _loadSongs() async {
@@ -523,11 +564,16 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     _audioPlayer.dispose();
     _searchController.dispose();
     _focusNode.dispose();
+    _headersController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isConnected && !_isLoading) {
+      return _buildSetupScreen();
+    }
+    
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
     return Focus(
@@ -538,6 +584,89 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         body: _showFullPlayer
             ? _buildFullPlayer(isDark)
             : _buildMainScreen(isDark),
+      ),
+    );
+  }
+
+  Widget _buildSetupScreen() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A1929),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.music_note, size: 80, color: Colors.white),
+              const SizedBox(height: 24),
+              const Text(
+                'Sri Keyan',
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Connect to YouTube Music',
+                style: TextStyle(fontSize: 16, color: Colors.white70),
+              ),
+              const SizedBox(height: 32),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'To get authentication headers:\n'
+                  '1. Open YouTube Music in browser\n'
+                  '2. Press F12 → Network tab\n'
+                  '3. Play a song → copy the request headers\n'
+                  '4. Or search for "ytmusicapi headers guide"',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                controller: _headersController,
+                maxLines: 8,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Paste authentication headers here...',
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.1),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _isSettingUp ? null : _setupConnection,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF0A1929),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isSettingUp
+                      ? const CircularProgressIndicator()
+                      : const Text('Connect', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: _checkConnection,
+                child: const Text('Retry Connection', style: TextStyle(color: Colors.white70)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
