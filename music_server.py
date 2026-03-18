@@ -17,6 +17,17 @@ ytmusic = None
 
 def setup_ytmusic():
     global ytmusic
+    
+    # First check for headers in environment variable (for persistent deployment)
+    headers_from_env = os.environ.get('YTMUSIC_HEADERS', '')
+    if headers_from_env:
+        try:
+            with open('headers_auth.json', 'w', encoding='utf-8') as f:
+                f.write(headers_from_env)
+            print("Headers loaded from environment variable")
+        except Exception as e:
+            print(f"Error writing headers from env: {e}")
+    
     try:
         if os.path.exists('headers_auth.json'):
             with open('headers_auth.json', 'r', encoding='utf-8') as f:
