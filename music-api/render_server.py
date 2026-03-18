@@ -3,6 +3,7 @@
 
 import asyncio
 import os
+import sys
 import json
 import logging
 from ytmusicapi import YTMusic
@@ -178,18 +179,21 @@ async def get_playlist(playlist_id: str):
 @app.get("/stream/{video_id}")
 async def stream(video_id: str):
     try:
+        url = f"https://www.youtube.com/watch?v={video_id}"
         proc = await asyncio.create_subprocess_exec(
-            "yt-dlp", "-g", "-f", "bestaudio",
-            f"https://www.youtube.com/watch?v={video_id}",
+            sys.executable, "-m", "yt_dlp", "-g", "-f", "bestaudio/best",
+            url,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stream_url, _ = await proc.communicate()
-        url = stream_url.decode().strip()
-        if url:
-            return {"url": url}
+        stream_url, stderr = await proc.communicate()
+        result = stream_url.decode().strip()
+        if proc.returncode == 0 and result.startswith("http"):
+            return {"url": result}
+        logger.error(f"yt-dlp error: {stderr.decode()}")
         return {"error": "Could not get stream URL"}
     except Exception as e:
+        logger.error(f"Stream error: {e}")
         return {"error": str(e)}
 
 @app.get("/lyrics")
