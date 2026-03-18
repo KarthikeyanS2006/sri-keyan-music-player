@@ -206,15 +206,48 @@ def home():
 @app.route('/stream/<video_id>', methods=['GET'])
 def stream(video_id):
     """Stream audio for a YouTube video"""
+    if not ytmusic:
+        return jsonify({'error': 'Not connected to YouTube Music'}), 400
+    
     try:
         import yt_dlp
+        import tempfile
         
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-        }
+        # Try to read cookies from headers_auth.json
+        cookie_file = None
+        if os.path.exists('headers_auth.json'):
+            try:
+                with open('headers_auth.json', 'r', encoding='utf-8') as f:
+                    auth_data = json.load(f)
+                    if 'cookie' in auth_data:
+                        cookie_str = auth_data['cookie']
+                        # Write cookies in Netscape format
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
+                            cf.write("# Netscape HTTP Cookie File\n")
+                            for cookie in cookie_str.split(';'):
+                                cookie = cookie.strip()
+                                if '=' in cookie:
+                                    parts = cookie.split('=')
+                                    name = parts[0]
+                                    value = '='.join(parts[1:])
+                                    cf.write(f".youtube.com\tTRUE\t/\tFALSE\t0\t{name}\t{value}\n")
+                            cookie_file = cf.name
+            except:
+                pass
+        
+        if cookie_file:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'cookiefile': cookie_file,
+            }
+        else:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+            }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
