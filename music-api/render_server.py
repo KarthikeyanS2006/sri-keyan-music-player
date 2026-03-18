@@ -181,15 +181,22 @@ async def stream(video_id: str):
     try:
         url = f"https://www.youtube.com/watch?v={video_id}"
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "yt_dlp", "-g", "-f", "bestaudio/best",
-            url,
+            sys.executable, "-m", "yt_dlp", "--no-warnings", "-J", url,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stream_url, stderr = await proc.communicate()
-        result = stream_url.decode().strip()
-        if proc.returncode == 0 and result.startswith("http"):
-            return {"url": result}
+        output, stderr = await proc.communicate()
+        
+        if proc.returncode == 0:
+            data = json.loads(output.decode())
+            formats = data.get("formats", [])
+            for f in formats:
+                if f.get("ext") in ["m4a", "mp3", "webm"] and f.get("url"):
+                    return {"url": f["url"]}
+            for f in formats:
+                if f.get("url") and f.get("acodec") != "none":
+                    return {"url": f["url"]}
+        
         logger.error(f"yt-dlp error: {stderr.decode()}")
         return {"error": "Could not get stream URL"}
     except Exception as e:
