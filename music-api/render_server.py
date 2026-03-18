@@ -3,11 +3,18 @@
 
 import asyncio
 import os
+import json
 from ytmusicapi import YTMusic
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-ytmusic = YTMusic("headers_auth.json")
+headers_json = os.environ.get("YT_HEADERS", "{}")
+headers = json.loads(headers_json) if headers_json and headers_json != "{}" else None
+
+if headers:
+    ytmusic = YTMusic(auth=headers)
+else:
+    ytmusic = YTMusic()
 
 app = FastAPI()
 
