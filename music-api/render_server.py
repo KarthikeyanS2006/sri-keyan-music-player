@@ -56,7 +56,17 @@ async def root():
 
 @app.get("/check")
 async def check():
-    return {"status": "connected"}
+    return {"status": "connected", "hasHeaders": headers is not None}
+
+@app.get("/debug")
+async def debug():
+    auth_file = os.path.join(os.path.dirname(__file__), "headers_auth.json")
+    return {
+        "hasHeaders": headers is not None,
+        "headersFromEnv": bool(os.environ.get("YT_HEADERS", "")),
+        "authFileExists": os.path.exists(auth_file),
+        "authFilePath": auth_file,
+    }
 
 @app.get("/search")
 async def search(q: str = ""):
