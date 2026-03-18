@@ -807,9 +807,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
               });
             }
             _playSong(_isSearching ? _songs.indexOf(song) : idx);
-          },
-        );
-      },
+            },
+          );
+        },
+          ),
         ),
       ],
     );
@@ -1182,31 +1183,33 @@ class _SongTile extends StatelessWidget {
               height: 48,
               decoration: BoxDecoration(
                 color: const Color(0xFF1A365D),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: song.imageUrl.isNotEmpty
-                ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) =>
-                    Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))))
-                : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))),
-          ),
-          if (index != null && !isSelected && !isPlaying)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  '${index! + 1}',
-                  style: const TextStyle(fontSize: 10, color: Colors.white70),
-                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: song.imageUrl.isNotEmpty
+                    ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) =>
+                        Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))))
+                    : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))),
               ),
             ),
+            if (index != null && !isSelected && !isPlaying)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${index! + 1}',
+                    style: const TextStyle(fontSize: 10, color: Colors.white70),
+                  ),
+                ),
+              ),
+          ],
         ),
         title: Text(
           song.title,
