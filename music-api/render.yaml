@@ -2,6 +2,6 @@ services:
   - type: web
     name: sri-keyan-api
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && pip install imageio-ffmpeg
     startCommand: python render_server.py
     plan: free
