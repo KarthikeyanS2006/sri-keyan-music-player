@@ -211,7 +211,6 @@ class MusicPlayerScreen extends StatefulWidget {
 class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final TextEditingController _searchController = TextEditingController();
-  final MusicApiService _musicApi = MusicApiService();
   final FocusNode _focusNode = FocusNode();
   
   List<Song> _allSongs = [];
@@ -241,7 +240,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   Future<void> _loadSongs() async {
     setState(() => _isLoading = true);
     try {
-      final songs = await _musicApi.getTamilSongs();
+      final songs = await MusicApiService.getHomeSongs();
       setState(() {
         _allSongs = songs;
         _songs = songs;
@@ -292,7 +291,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     });
     
     final song = _songs[index];
-    String? audioUrl = await _musicApi.fetchStreamUrl(song.id);
+    String? audioUrl = await MusicApiService.getStreamUrl(song.id);
     
     if (audioUrl != null && audioUrl.isNotEmpty) {
       try {
@@ -349,7 +348,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     }
 
     try {
-      final results = await _musicApi.searchSongs(query);
+      final results = await MusicApiService.searchSongs(query);
       setState(() => _searchResults = results);
     } catch (e) {
       setState(() => _searchResults = []);
@@ -368,44 +367,44 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
       List<Song> songs;
       switch (playlist) {
         case 'Top Trending':
-          songs = await _musicApi.searchSongs('top tamil songs 2024');
+          songs = await MusicApiService.searchSongs('top tamil songs 2024');
           break;
         case 'Most Played':
-          songs = await _musicApi.searchSongs('most viewed tamil songs');
+          songs = await MusicApiService.searchSongs('most viewed tamil songs');
           break;
         case '2024 Hits':
-          songs = await _musicApi.searchSongs('tamil 2024 hits');
+          songs = await MusicApiService.searchSongs('tamil 2024 hits');
           break;
         case '2023 Hits':
-          songs = await _musicApi.searchSongs('tamil 2023 hits');
+          songs = await MusicApiService.searchSongs('tamil 2023 hits');
           break;
         case '2022 Hits':
-          songs = await _musicApi.searchSongs('tamil 2022 hits');
+          songs = await MusicApiService.searchSongs('tamil 2022 hits');
           break;
         case '90s Tamil':
-          songs = await _musicApi.searchSongs('90s tamil songs');
+          songs = await MusicApiService.searchSongs('90s tamil songs');
           break;
         case 'Melody Songs':
-          songs = await _musicApi.searchSongs('tamil melody songs');
+          songs = await MusicApiService.searchSongs('tamil melody songs');
           break;
         case 'Party Songs':
-          songs = await _musicApi.searchSongs('tamil party songs');
+          songs = await MusicApiService.searchSongs('tamil party songs');
           break;
         case 'Sad Songs':
-          songs = await _musicApi.searchSongs('tamil sad songs');
+          songs = await MusicApiService.searchSongs('tamil sad songs');
           break;
         case 'Romance':
-          songs = await _musicApi.searchSongs('tamil love songs');
+          songs = await MusicApiService.searchSongs('tamil love songs');
           break;
         case 'Devotional':
-          songs = await _musicApi.searchSongs('tamil devotional songs');
+          songs = await MusicApiService.searchSongs('tamil devotional songs');
           break;
         case 'Hip Hop':
-          songs = await _musicApi.searchSongs('tamil hiphop songs');
+          songs = await MusicApiService.searchSongs('tamil hiphop songs');
           break;
         case 'Tamil Hits':
         default:
-          songs = await _musicApi.getTamilSongs();
+          songs = await MusicApiService.getHomeSongs();
       }
       
       setState(() {
@@ -1241,144 +1240,68 @@ class MusicApiService {
     return 'http://localhost:5000';
   }
   
-  bool _isConnected = false;
+  static bool isConnected = false;
 
-  Future<bool> checkConnection() async {
+  static Future<bool> checkConnection() async {
     try {
       final response = await http.get(Uri.parse('$_baseUrl/check')).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        _isConnected = data['status'] == 'connected';
+        isConnected = data['status'] == 'connected';
       }
     } catch (_) {}
-    return _isConnected;
+    return isConnected;
   }
 
-  Future<List<Song>> getTamilSongs() async {
-    await checkConnection();
-    
-    if (!_isConnected) {
-      _showServerNotConnectedSnackbar();
-    }
-    
-    if (_isConnected) {
-      try {
-        final response = await http.get(Uri.parse('$_baseUrl/home')).timeout(const Duration(seconds: 15));
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data['songs'] != null && (data['songs'] as List).isNotEmpty) {
-            return (data['songs'] as List).map((item) => Song(
-              id: item['id'] ?? '',
-              title: item['title'] ?? 'Unknown',
-              artist: item['artist'] ?? 'Unknown Artist',
-              album: item['album'] ?? 'Unknown Album',
-              imageUrl: item['image'] ?? '',
-              audioUrl: '',
-              duration: item['duration'] ?? '0:00',
-            )).toList();
-          }
+  static Future<List<Song>> getHomeSongs() async {
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/home')).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is List && data.isNotEmpty) {
+          return data.map((item) => Song(
+            id: item['id'] ?? '',
+            title: item['title'] ?? 'Unknown',
+            artist: item['artist'] ?? 'Unknown Artist',
+            album: item['album'] ?? '',
+            imageUrl: item['thumbnail'] ?? '',
+            audioUrl: '',
+            duration: item['duration'] ?? '0:00',
+          )).toList();
         }
-      } catch (_) {}
-    }
-    return [];
-  }
-
-  void _showServerNotConnectedSnackbar() {
-    if (_showedServerWarning) return;
-    _showedServerWarning = true;
-    
-    Future.delayed(const Duration(seconds: 2), () {
-      if (_allSongs.isEmpty && !_isConnected) {
-        ScaffoldMessenger.of(navigatorKey.currentContext ?? navigatorKey.currentState!.context).showSnackBar(
-          SnackBar(
-            content: const Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Server Not Connected', style: TextStyle(fontWeight: FontWeight.bold)),
-                SizedBox(height: 4),
-                Text('Make sure music_server.py is running on your computer'),
-                Text('For mobile access, deploy backend to Render.com'),
-              ],
-            ),
-            backgroundColor: const Color(0xFF1A365D),
-            duration: const Duration(seconds: 8),
-            action: SnackBarAction(
-              label: 'Learn More',
-              textColor: Colors.white,
-              onPressed: _showServerInstructions,
-            ),
-          ),
-        );
       }
-    });
-  }
-
-  void _showServerInstructions() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: primaryColor,
-        title: const Text('Backend Server Required', style: TextStyle(color: Colors.white)),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('To play songs:', style: TextStyle(color: Colors.white70)),
-            SizedBox(height: 12),
-            Text('1. Run music_server.py on your computer', style: TextStyle(color: Colors.white60, fontSize: 12)),
-            Text('2. Keep your computer on while using the app', style: TextStyle(color: Colors.white60, fontSize: 12)),
-            Text('3. Make sure phone & laptop are on same WiFi', style: TextStyle(color: Colors.white60, fontSize: 12)),
-            SizedBox(height: 12),
-            Text('For permanent mobile access:', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            SizedBox(height: 8),
-            Text('Deploy backend to Render.com (free tier)', style: TextStyle(color: Colors.white60, fontSize: 12)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<List<Song>> searchSongs(String query) async {
-    if (query.isEmpty) return getTamilSongs();
-    await checkConnection();
-    
-    if (_isConnected) {
-      try {
-        final response = await http.get(
-          Uri.parse('$_baseUrl/search?q=${Uri.encodeComponent(query)}'),
-        ).timeout(const Duration(seconds: 15));
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data['results'] != null && (data['results'] as List).isNotEmpty) {
-            return (data['results'] as List).map((item) => Song(
-              id: item['id'] ?? '',
-              title: item['title'] ?? 'Unknown',
-              artist: item['artist'] ?? 'Unknown Artist',
-              album: item['album'] ?? 'Unknown Album',
-              imageUrl: item['image'] ?? '',
-              audioUrl: '',
-              duration: item['duration'] ?? '0:00',
-            )).toList();
-          }
-        }
-      } catch (_) {}
-    }
+    } catch (_) {}
     return [];
   }
 
-  Future<String?> fetchStreamUrl(String videoId) async {
-    if (!_isConnected) return null;
+  static Future<List<Song>> searchSongs(String query) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/search?q=${Uri.encodeComponent(query)}'),
+      ).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data is List && data.isNotEmpty) {
+          return data.map((item) => Song(
+            id: item['id'] ?? '',
+            title: item['title'] ?? 'Unknown',
+            artist: item['artist'] ?? 'Unknown Artist',
+            album: item['album'] ?? '',
+            imageUrl: item['thumbnail'] ?? '',
+            audioUrl: '',
+            duration: item['duration'] ?? '0:00',
+          )).toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<String?> getStreamUrl(String videoId) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/stream/$videoId'),
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['url'];
@@ -1387,3 +1310,4 @@ class MusicApiService {
     return null;
   }
 }
+
