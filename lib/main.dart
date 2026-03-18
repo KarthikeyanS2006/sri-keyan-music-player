@@ -292,11 +292,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     });
     
     final song = _songs[index];
-    String? audioUrl = await MusicApiService.getStreamUrl(song.id);
+    final streamData = await MusicApiService.getStreamData(song.id);
+    final audioUrl = streamData?['url'];
+    final referer = streamData?['referer'] ?? 'https://www.youtube.com/';
     
     if (audioUrl != null && audioUrl.isNotEmpty) {
       try {
-        await _audioPlayer.setUrl(audioUrl);
+        await _audioPlayer.setUrl(audioUrl, headers: {'Referer': referer});
         await _audioPlayer.play();
       } catch (e) {
         debugPrint('Error: $e');
@@ -1298,14 +1300,19 @@ class MusicApiService {
     return [];
   }
 
-  static Future<String?> getStreamUrl(String videoId) async {
+  static Future<Map<String, String>?> getStreamData(String videoId) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/stream/$videoId'),
       ).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return data['url'];
+        if (data['url'] != null) {
+          return {
+            'url': data['url'] as String,
+            'referer': data['referer'] as String? ?? 'https://www.youtube.com/',
+          };
+        }
       }
     } catch (_) {}
     return null;
