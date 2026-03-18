@@ -4,17 +4,22 @@
 import asyncio
 import os
 import json
+import logging
 from ytmusicapi import YTMusic
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 headers = None
 headers_json = os.environ.get("YT_HEADERS", "")
 if headers_json:
     try:
         headers = json.loads(headers_json)
-    except:
-        pass
+        logger.info("Loaded headers from environment variable")
+    except Exception as e:
+        logger.error(f"Failed to parse headers from env: {e}")
 
 if not headers:
     auth_file = os.path.join(os.path.dirname(__file__), "headers_auth.json")
@@ -22,12 +27,17 @@ if not headers:
         try:
             with open(auth_file, "r") as f:
                 headers = json.load(f)
-        except:
-            pass
+            logger.info("Loaded headers from secret file")
+        except Exception as e:
+            logger.error(f"Failed to load headers file: {e}")
+    else:
+        logger.warning("No headers_auth.json file found")
 
 if headers:
+    logger.info("Initializing YTMusic with auth")
     ytmusic = YTMusic(auth=headers)
 else:
+    logger.info("Initializing YTMusic without auth")
     ytmusic = YTMusic()
 
 app = FastAPI()
@@ -75,28 +85,32 @@ async def search(q: str = ""):
 @app.get("/home")
 async def home():
     try:
+        logger.info("Fetching home data...")
         charts = ytmusic.get_home(limit=20)
+        logger.info(f"Got {len(charts) if charts else 0} sections from home")
         all_songs = []
-        for section in charts:
-            for item in section.get("contents", []):
-                if isinstance(item, dict) and "musicTwoRowRenderer" in item:
-                    renderer = item["musicTwoRowRenderer"]
-                    video_id = renderer.get("title", {}).get("runs", [{}])[0].get("navigationEndpoint", {}).get("watchEndpoint", {}).get("videoId", "")
-                    thumbnail = renderer.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "") if renderer.get("thumbnail", {}).get("thumbnails") else ""
-                    if "lh3.googleusercontent.com" in thumbnail and video_id:
-                        thumbnail = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
-                    title_runs = renderer.get("title", {}).get("runs", [])
-                    title = title_runs[0].get("text", "") if title_runs else ""
-                    subtitle_runs = renderer.get("subtitle", {}).get("runs", [])
-                    artist = " ".join([r.get("text", "") for r in subtitle_runs])
-                    if video_id:
-                        all_songs.append({
-                            "id": video_id,
-                            "title": title,
-                            "artist": artist,
-                            "thumbnail": thumbnail,
-                            "videoId": video_id,
-                        })
+        if charts:
+            for section in charts:
+                for item in section.get("contents", []):
+                    if isinstance(item, dict) and "musicTwoRowRenderer" in item:
+                        renderer = item["musicTwoRowRenderer"]
+                        video_id = renderer.get("title", {}).get("runs", [{}])[0].get("navigationEndpoint", {}).get("watchEndpoint", {}).get("videoId", "")
+                        thumbnail = renderer.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "") if renderer.get("thumbnail", {}).get("thumbnails") else ""
+                        if "lh3.googleusercontent.com" in thumbnail and video_id:
+                            thumbnail = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
+                        title_runs = renderer.get("title", {}).get("runs", [])
+                        title = title_runs[0].get("text", "") if title_runs else ""
+                        subtitle_runs = renderer.get("subtitle", {}).get("runs", [])
+                        artist = " ".join([r.get("text", "") for r in subtitle_runs])
+                        if video_id:
+                            all_songs.append({
+                                "id": video_id,
+                                "title": title,
+                                "artist": artist,
+                                "thumbnail": thumbnail,
+                                "videoId": video_id,
+                            })
+        logger.info(f"Returning {len(all_songs)} songs")
         return all_songs[:20]
     except Exception as e:
         return {"error": str(e)}
