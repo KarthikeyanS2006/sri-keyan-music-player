@@ -292,13 +292,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     });
     
     final song = _songs[index];
-    final streamData = await MusicApiService.getStreamData(song.id);
-    final audioUrl = streamData?['url'];
-    final referer = streamData?['referer'] ?? 'https://www.youtube.com/';
+    String? audioUrl = await MusicApiService.getStreamUrl(song.id);
     
     if (audioUrl != null && audioUrl.isNotEmpty) {
       try {
-        await _audioPlayer.setUrl(audioUrl, headers: {'Referer': referer});
+        await _audioPlayer.setUrl(audioUrl);
         await _audioPlayer.play();
       } catch (e) {
         debugPrint('Error: $e');
@@ -1238,7 +1236,7 @@ class _SongTile extends StatelessWidget {
 class MusicApiService {
   static String get _baseUrl {
     if (kIsWeb) {
-      return const String.fromEnvironment('API_URL', defaultValue: 'https://sri-keyan-music-player-production.up.railway.app');
+      return 'http://localhost:5000';
     }
     return 'http://localhost:5000';
   }
@@ -1300,19 +1298,14 @@ class MusicApiService {
     return [];
   }
 
-  static Future<Map<String, String>?> getStreamData(String videoId) async {
+  static Future<String?> getStreamUrl(String videoId) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/stream/$videoId'),
       ).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data['url'] != null) {
-          return {
-            'url': data['url'] as String,
-            'referer': data['referer'] as String? ?? 'https://www.youtube.com/',
-          };
-        }
+        return data['url'];
       }
     } catch (_) {}
     return null;
