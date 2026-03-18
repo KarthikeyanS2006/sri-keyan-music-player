@@ -8,8 +8,22 @@ from ytmusicapi import YTMusic
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-headers_json = os.environ.get("YT_HEADERS", "{}")
-headers = json.loads(headers_json) if headers_json and headers_json != "{}" else None
+headers = None
+headers_json = os.environ.get("YT_HEADERS", "")
+if headers_json:
+    try:
+        headers = json.loads(headers_json)
+    except:
+        pass
+
+if not headers:
+    auth_file = os.path.join(os.path.dirname(__file__), "headers_auth.json")
+    if os.path.exists(auth_file):
+        try:
+            with open(auth_file, "r") as f:
+                headers = json.load(f)
+        except:
+            pass
 
 if headers:
     ytmusic = YTMusic(auth=headers)
