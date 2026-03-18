@@ -30,6 +30,10 @@ app.add_middleware(
 async def root():
     return {"message": "Sri Keyan Music API", "status": "running"}
 
+@app.get("/check")
+async def check():
+    return {"status": "connected"}
+
 @app.get("/search")
 async def search(q: str = ""):
     try:
