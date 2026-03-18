@@ -97,11 +97,17 @@ async def home():
     try:
         logger.info("Fetching home data...")
         charts = ytmusic.get_home(limit=20)
-        logger.info(f"Got {len(charts) if charts else 0} sections from home")
+        logger.info(f"Response type: {type(charts)}")
+        logger.info(f"Charts length: {len(charts) if charts else 'None'}")
+        if charts:
+            logger.info(f"First section keys: {list(charts[0].keys()) if charts else 'N/A'}")
         all_songs = []
         if charts:
-            for section in charts:
-                for item in section.get("contents", []):
+            for i, section in enumerate(charts):
+                logger.info(f"Section {i}: {section.get('title', 'untitled')}")
+                contents = section.get("contents", [])
+                logger.info(f"  Contents count: {len(contents)}")
+                for j, item in enumerate(contents):
                     if isinstance(item, dict) and "musicTwoRowRenderer" in item:
                         renderer = item["musicTwoRowRenderer"]
                         video_id = renderer.get("title", {}).get("runs", [{}])[0].get("navigationEndpoint", {}).get("watchEndpoint", {}).get("videoId", "")
