@@ -1236,7 +1236,7 @@ class _SongTile extends StatelessWidget {
 class MusicApiService {
   static String get _baseUrl {
     if (kIsWeb) {
-      return const String.fromEnvironment('API_URL', defaultValue: 'https://sri-keyan-music-player.onrender.com');
+      return const String.fromEnvironment('API_URL', defaultValue: 'https://sri-keyan-music-player-production.up.railway.app');
     }
     return 'http://localhost:5000';
   }
