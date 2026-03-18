@@ -179,9 +179,9 @@ async def get_playlist(playlist_id: str):
 @app.get("/stream/{video_id}")
 async def stream(video_id: str):
     try:
-        url = f"https://yewtu.be/watch?v={video_id}&format=audio"
+        url = f"https://www.youtube.com/watch?v={video_id}"
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "yt_dlp", "--no-warnings", "-g", url,
+            sys.executable, "-m", "yt_dlp", "--no-warnings", "-f", "bestaudio[ext=m4a]/bestaudio", "-g", url,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -191,19 +191,8 @@ async def stream(video_id: str):
         if proc.returncode == 0 and result.startswith("http"):
             return {"url": result}
         
-        url2 = f"https://invidious.projectsegfau.lt/watch?v={video_id}"
-        proc2 = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "yt_dlp", "--no-warnings", "-g", url2,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stream_url2, _ = await proc2.communicate()
-        result2 = stream_url2.decode().strip()
-        
-        if proc2.returncode == 0 and result2.startswith("http"):
-            return {"url": result2}
-        
-        return {"error": "Could not get stream URL"}
+        logger.error(f"yt-dlp error: {stderr.decode()}")
+        return {"error": f"Could not get stream: {stderr.decode()[:100]}"}
     except Exception as e:
         logger.error(f"Stream error: {e}")
         return {"error": str(e)}
