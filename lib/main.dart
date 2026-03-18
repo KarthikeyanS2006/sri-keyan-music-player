@@ -1259,17 +1259,16 @@ class MusicApiService {
       final response = await http.get(Uri.parse('$_baseUrl/home')).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data is List && data.isNotEmpty) {
-          return data.map((item) => Song(
-            id: item['id'] ?? '',
-            title: item['title'] ?? 'Unknown',
-            artist: item['artist'] ?? 'Unknown Artist',
-            album: item['album'] ?? '',
-            imageUrl: item['thumbnail'] ?? '',
-            audioUrl: '',
-            duration: item['duration'] ?? '0:00',
-          )).toList();
-        }
+        final List<dynamic> songs = data['songs'] ?? [];
+        return songs.map((item) => Song(
+          id: item['id'] ?? '',
+          title: item['title'] ?? 'Unknown',
+          artist: item['artist'] ?? 'Unknown Artist',
+          album: item['album'] ?? 'Unknown Album',
+          imageUrl: item['image'] ?? '',
+          audioUrl: '',
+          duration: item['duration'] ?? '0:00',
+        )).toList();
       }
     } catch (_) {}
     return [];
@@ -1282,17 +1281,16 @@ class MusicApiService {
       ).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        if (data is List && data.isNotEmpty) {
-          return data.map((item) => Song(
-            id: item['id'] ?? '',
-            title: item['title'] ?? 'Unknown',
-            artist: item['artist'] ?? 'Unknown Artist',
-            album: item['album'] ?? '',
-            imageUrl: item['thumbnail'] ?? '',
-            audioUrl: '',
-            duration: item['duration'] ?? '0:00',
-          )).toList();
-        }
+        final List<dynamic> results = data['results'] ?? [];
+        return results.map((item) => Song(
+          id: item['id'] ?? '',
+          title: item['title'] ?? 'Unknown',
+          artist: item['artist'] ?? 'Unknown Artist',
+          album: item['album'] ?? 'Unknown Album',
+          imageUrl: item['image'] ?? '',
+          audioUrl: '',
+          duration: item['duration'] ?? '0:00',
+        )).toList();
       }
     } catch (_) {}
     return [];
@@ -1309,6 +1307,64 @@ class MusicApiService {
       }
     } catch (_) {}
     return null;
+  }
+
+  static Future<String?> getLyrics(String videoId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/lyrics?id=$videoId'),
+      ).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['lyrics'];
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  static Future<List<Map<String, dynamic>>> getPlaylists() async {
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/playlist')).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return List<Map<String, dynamic>>.from(data['playlists'] ?? []);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<List<Song>> getPlaylistTracks(String playlistId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/playlist_tracks?id=$playlistId'),
+      ).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> tracks = data['tracks'] ?? [];
+        return tracks.map((item) => Song(
+          id: item['id'] ?? '',
+          title: item['title'] ?? 'Unknown',
+          artist: item['artist'] ?? 'Unknown Artist',
+          album: item['album'] ?? 'Unknown Album',
+          imageUrl: item['image'] ?? '',
+          audioUrl: '',
+          duration: item['duration'] ?? '0:00',
+        )).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<bool> setup(String headers) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/setup'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'headers': headers}),
+      ).timeout(const Duration(seconds: 10));
+      return response.statusCode == 200;
+    } catch (_) {}
+    return false;
   }
 }
 
