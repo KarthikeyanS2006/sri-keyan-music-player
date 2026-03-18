@@ -6,10 +6,13 @@ A beautiful Tamil music player built with Flutter and YouTube Music API.
 ![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)
 ![Python](https://img.shields.io/badge/Python-3.x-green)
 
+Developed by **[karthikeyan S](https://github.com/KarthikeyanS2006)**
+
 ## Features
 
 - **Beautiful UI** - Dark navy blue theme with smooth animations
 - **Splash Screen** - Animated loading screen on app start
+- **Mobile Responsive** - Works perfectly on mobile and desktop
 - **Keyboard Controls** - Full PC keyboard support
 - **Multiple Playlists** - Various Tamil music categories
   - Top Trending
@@ -44,6 +47,7 @@ The app features a dark navy blue theme with:
 - Mini player with progress bar
 - Full-screen player with all controls
 - Smooth scrolling playlist tabs
+- Mobile responsive design
 
 ## Installation
 
@@ -88,12 +92,19 @@ If authentication fails, you can update headers:
 
 ### Flutter App Setup
 
-1. Run the Flutter app:
+For Web/Chrome:
 ```bash
 flutter run -d chrome
 ```
 
-Or for Windows:
+For Mobile:
+```bash
+flutter run -d android
+# or
+flutter run -d ios
+```
+
+For Windows:
 ```bash
 flutter run -d windows
 ```
@@ -105,15 +116,15 @@ test_app/
 ├── lib/
 │   └── main.dart          # Main Flutter app
 ├── music_server.py        # Python backend for YouTube Music API
-├── headers_auth.json       # YouTube Music authentication headers
+├── headers_auth.json      # YouTube Music authentication headers
 ├── pubspec.yaml           # Flutter dependencies
 ├── SETUP.md               # Setup instructions
 └── README.md              # This file
 ```
 
-## Developer
+## Connect With Me
 
-**karthikeyan S**
+- **GitHub**: [KarthikeyanS2006](https://github.com/KarthikeyanS2006)
 
 ## License
 
