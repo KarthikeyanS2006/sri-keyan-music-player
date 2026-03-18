@@ -6,12 +6,19 @@ import os
 import sys
 import json
 import logging
+import shutil
+import imageio_ffmpeg
 from ytmusicapi import YTMusic
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Configure yt-dlp to use imageio-ffmpeg
+ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+os.environ["PATH"] = os.path.dirname(ffmpeg_path) + os.pathsep + os.environ.get("PATH", "")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info(f"FFmpeg path: {ffmpeg_path}")
 
 headers = None
 headers_json = os.environ.get("YT_HEADERS", "")
