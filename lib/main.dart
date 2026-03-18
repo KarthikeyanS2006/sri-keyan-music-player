@@ -592,11 +592,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1929),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const SizedBox(height: 40),
               const Icon(Icons.music_note, size: 80, color: Colors.white),
               const SizedBox(height: 24),
               const Text(
@@ -628,7 +629,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
               const SizedBox(height: 24),
               TextField(
                 controller: _headersController,
-                maxLines: 8,
+                maxLines: 6,
                 style: const TextStyle(color: Colors.white, fontSize: 12),
                 decoration: InputDecoration(
                   hintText: 'Paste authentication headers here...',
@@ -664,6 +665,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                 onPressed: _checkConnection,
                 child: const Text('Retry Connection', style: TextStyle(color: Colors.white70)),
               ),
+              const SizedBox(height: 40),
             ],
           ),
         ),
