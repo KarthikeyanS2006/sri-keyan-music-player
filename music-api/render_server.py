@@ -98,56 +98,53 @@ async def home():
         logger.info("Fetching home data...")
         charts = ytmusic.get_home(limit=20)
         all_songs = []
-        if charts:
-            for i, section in enumerate(charts):
-                contents = section.get("contents", [])
-                for j, item in enumerate(contents[:2]):
-                    logger.info(f"Section {i} item {j} keys: {list(item.keys()) if isinstance(item, dict) else type(item)}")
         
         if not charts:
             return []
-            
-        section = next((s for s in charts if s.get("title") == "Quick picks"), None)
-        if not section:
-            section = charts[2] if len(charts) > 2 else None
-            
-        if section:
+        
+        for section in charts:
             for item in section.get("contents", []):
-                if isinstance(item, dict):
-                    if "musicTwoRowRenderer" in item:
-                        renderer = item["musicTwoRowRenderer"]
-                        video_id = renderer.get("title", {}).get("runs", [{}])[0].get("navigationEndpoint", {}).get("watchEndpoint", {}).get("videoId", "")
-                    elif "musicResponsiveListItemRenderer" in item:
-                        renderer = item["musicResponsiveListItemRenderer"]
-                        video_id = renderer.get("playlistItemData", {}).get("videoId", "")
-                    else:
-                        continue
-                    
-                    thumbnail = ""
-                    for thumb in renderer.get("thumbnail", {}).get("thumbnails", []):
-                        if thumb.get("url"):
+                if not isinstance(item, dict):
+                    continue
+                
+                video_id = item.get("videoId")
+                if not video_id:
+                    continue
+                
+                title = item.get("title", "Unknown")
+                
+                artists = item.get("artists", [])
+                if isinstance(artists, list):
+                    artist = ", ".join([a.get("name", "") for a in artists if isinstance(a, dict)])
+                else:
+                    artist = str(artists) if artists else "Unknown Artist"
+                
+                album = item.get("album", {})
+                if isinstance(album, dict):
+                    album = album.get("name", "")
+                else:
+                    album = str(album) if album else ""
+                
+                thumbnails = item.get("thumbnails", [])
+                thumbnail = ""
+                if thumbnails:
+                    for thumb in thumbnails:
+                        if isinstance(thumb, dict) and thumb.get("url"):
                             thumbnail = thumb["url"]
                             break
-                    
-                    if "lh3.googleusercontent.com" in thumbnail and video_id:
-                        thumbnail = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
-                    
-                    title = ""
-                    for run in renderer.get("title", {}).get("runs", []):
-                        title += run.get("text", "")
-                    
-                    artist = ""
-                    for run in renderer.get("subtitle", {}).get("runs", []):
-                        artist += run.get("text", "")
-                    
-                    if video_id and title:
-                        all_songs.append({
-                            "id": video_id,
-                            "title": title,
-                            "artist": artist,
-                            "thumbnail": thumbnail,
-                            "videoId": video_id,
-                        })
+                
+                if "lh3.googleusercontent.com" in thumbnail and video_id:
+                    thumbnail = f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
+                
+                if video_id and title:
+                    all_songs.append({
+                        "id": video_id,
+                        "title": title,
+                        "artist": artist,
+                        "album": album,
+                        "thumbnail": thumbnail,
+                        "videoId": video_id,
+                    })
         
         logger.info(f"Returning {len(all_songs)} songs")
         return all_songs[:20]
