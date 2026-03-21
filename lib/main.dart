@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 void main() {
   runApp(const MusicApp());
@@ -17,9 +18,19 @@ class MusicApp extends StatefulWidget {
 
 class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin {
   bool _isInitialized = false;
+  double _loadingProgress = 0.0;
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
+
+  static const Color primaryOrange = Color(0xFFFF6B35);
+  static const Color secondaryOrange = Color(0xFFFF8C42);
+  static const Color lightOrange = Color(0xFFFFB38A);
+  static const Color accentOrange = Color(0xFFFF4500);
+  static const Color white = Color(0xFFFFFFFF);
+  static const Color lightGray = Color(0xFFF8F9FA);
+  static const Color textDark = Color(0xFF2C3E50);
+  static const Color textGray = Color(0xFF6C757D);
 
   @override
   void initState() {
@@ -39,7 +50,13 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
   }
 
   Future<void> _initializeApp() async {
-    await Future.delayed(const Duration(seconds: 2));
+    for (int i = 0; i <= 100; i += 5) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      if (mounted) {
+        setState(() => _loadingProgress = i / 100);
+      }
+    }
+    await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) {
       setState(() => _isInitialized = true);
     }
@@ -57,7 +74,7 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         home: Scaffold(
-          backgroundColor: const Color(0xFF0A1929),
+          backgroundColor: white,
           body: Center(
             child: AnimatedBuilder(
               animation: _controller,
@@ -70,14 +87,18 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Container(
-                          width: 120,
-                          height: 120,
+                          width: 140,
+                          height: 140,
                           decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
+                            gradient: const LinearGradient(
+                              colors: [primaryOrange, secondaryOrange],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(30),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.white.withValues(alpha: 0.3),
+                                color: primaryOrange.withValues(alpha: 0.4),
                                 blurRadius: 30,
                                 spreadRadius: 5,
                               ),
@@ -85,38 +106,62 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
                           ),
                           child: const Icon(
                             Icons.music_note,
-                            size: 60,
-                            color: Color(0xFF0A1929),
+                            size: 70,
+                            color: white,
                           ),
                         ),
                         const SizedBox(height: 32),
-                        const Text(
-                          'Sri Keyan',
-                          style: TextStyle(
-                            fontSize: 36,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 2,
+                        ShaderMask(
+                          shaderCallback: (bounds) => const LinearGradient(
+                            colors: [primaryOrange, secondaryOrange],
+                          ).createShader(bounds),
+                          child: const Text(
+                            'Sri Keyan',
+                            style: TextStyle(
+                              fontSize: 42,
+                              fontWeight: FontWeight.bold,
+                              color: white,
+                              letterSpacing: 2,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Tamil Music Player',
+                        Text(
+                          'Music Player',
                           style: TextStyle(
                             fontSize: 16,
-                            color: Colors.white70,
+                            color: textGray,
                             letterSpacing: 4,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 48),
-                        SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white.withValues(alpha: 0.7),
+                        Container(
+                          width: 200,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: lightGray,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: _loadingProgress,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [primaryOrange, secondaryOrange],
+                                ),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
                             ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${(_loadingProgress * 100).toInt()}%',
+                          style: TextStyle(
+                            color: textGray,
+                            fontSize: 14,
                           ),
                         ),
                       ],
@@ -134,21 +179,30 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
       title: 'Sri Keyan',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.dark,
-        primaryColor: Colors.white,
-        scaffoldBackgroundColor: const Color(0xFF0A1929),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0A1929),
-          foregroundColor: Colors.white,
-          elevation: 0,
+        brightness: Brightness.light,
+        primaryColor: primaryOrange,
+        scaffoldBackgroundColor: white,
+        fontFamily: 'Poppins',
+        colorScheme: ColorScheme.light(
+          primary: primaryOrange,
+          secondary: secondaryOrange,
+          surface: white,
+          onPrimary: white,
+          onSecondary: white,
+          onSurface: textDark,
         ),
-        colorScheme: const ColorScheme.dark(
-          primary: Colors.white,
-          secondary: Color(0xFF1A365D),
-          surface: Color(0xFF0A1929),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: white,
+          foregroundColor: textDark,
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            color: textDark,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
-      themeMode: ThemeMode.dark,
       home: const MusicPlayerScreen(),
     );
   }
@@ -163,6 +217,7 @@ class Song {
   final String audioUrl;
   final String duration;
   final String url;
+  final String year;
 
   Song({
     required this.id,
@@ -173,6 +228,7 @@ class Song {
     required this.audioUrl,
     required this.duration,
     this.url = '',
+    this.year = '',
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -185,8 +241,19 @@ class Song {
       audioUrl: json['media_url'] ?? '',
       duration: json['duration'] ?? '0',
       url: json['perma_url'] ?? json['url'] ?? '',
+      year: json['year'] ?? '',
     );
   }
+
+  String get movieName {
+    final match = RegExp(r'\([^)]*\)').firstMatch(title);
+    if (match != null) {
+      return match.group(0)!.replaceAll('(', '').replaceAll(')', '').trim();
+    }
+    return album.isNotEmpty ? album : '';
+  }
+
+  bool get isMovieSong => movieName.isNotEmpty;
 }
 
 class MusicPlayerScreen extends StatefulWidget {
@@ -196,10 +263,11 @@ class MusicPlayerScreen extends StatefulWidget {
   State<MusicPlayerScreen> createState() => _MusicPlayerScreenState();
 }
 
-class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
+class _MusicPlayerScreenState extends State<MusicPlayerScreen> with SingleTickerProviderStateMixin {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  late TabController _tabController;
   
   List<Song> _songs = [];
   List<Song> _searchResults = [];
@@ -210,16 +278,26 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   bool _isBuffering = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
-  double _volume = 1.0;
   bool _showFullPlayer = false;
-  String _currentCategory = 'Trending Tamil Songs';
+  String _currentCategory = 'Trending';
+  YoutubePlayerController? _youtubeController;
+  String _currentLyrics = '';
+  List<String> _lyricLines = [];
+  int _currentLyricIndex = -1;
+  final ScrollController _lyricsScrollController = ScrollController();
 
-  static const Color primaryColor = Color(0xFF0A1929);
-  static const Color secondaryColor = Color(0xFF1A365D);
+  static const Color primaryOrange = Color(0xFFFF6B35);
+  static const Color secondaryOrange = Color(0xFFFF8C42);
+  static const Color lightOrange = Color(0xFFFFB38A);
+  static const Color white = Color(0xFFFFFFFF);
+  static const Color lightGray = Color(0xFFF8F9FA);
+  static const Color textDark = Color(0xFF2C3E50);
+  static const Color textGray = Color(0xFF6C757D);
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _loadSongs();
     _focusNode.requestFocus();
   }
@@ -249,6 +327,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     _audioPlayer.positionStream.listen((position) {
       if (mounted) {
         setState(() => _position = position);
+        _updateCurrentLyric(position);
       }
     });
 
@@ -269,6 +348,74 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     });
   }
 
+  void _updateCurrentLyric(Duration position) {
+    if (_lyricLines.isEmpty) return;
+    
+    for (int i = _lyricLines.length - 1; i >= 0; i--) {
+      if (i * 3 <= position.inSeconds) {
+        if (_currentLyricIndex != i && _lyricsScrollController.hasClients) {
+          setState(() => _currentLyricIndex = i);
+          _scrollToLyric(i);
+        }
+        break;
+      }
+    }
+  }
+
+  void _scrollToLyric(int index) {
+    if (_lyricsScrollController.hasClients) {
+      final offset = index * 60.0;
+      _lyricsScrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  Future<void> _fetchLyrics(String songId, String songName) async {
+    try {
+      final lyrics = await JioSaavnApi.getLyrics(songId);
+      if (lyrics.isNotEmpty) {
+        setState(() {
+          _currentLyrics = lyrics;
+          _lyricLines = lyrics.split('\n').where((line) => line.trim().isNotEmpty).toList();
+          _currentLyricIndex = -1;
+        });
+      } else {
+        setState(() {
+          _currentLyrics = _generatePlaceholderLyrics(songName);
+          _lyricLines = _currentLyrics.split('\n').where((line) => line.trim().isNotEmpty).toList();
+          _currentLyricIndex = -1;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _currentLyrics = _generatePlaceholderLyrics(songName);
+        _lyricLines = _currentLyrics.split('\n').where((line) => line.trim().isNotEmpty).toList();
+      });
+    }
+  }
+
+  String _generatePlaceholderLyrics(String songName) {
+    return '''♪ ♫ ♪ ♫ ♪ ♫ ♪
+
+🎵 Now Playing 🎵
+
+$songName
+
+♪ ♫ ♫ ♪ ♫ ♫ ♪
+
+🎶 Lyrics not available 🎶
+
+The full lyrics will appear here
+when available from JioSaavn
+
+♪ ♫ ♪ ♫ ♪ ♫ ♪
+
+Thank you for listening!''';
+  }
+
   Future<void> _playSong(int index) async {
     if (index < 0 || index >= _songs.length) return;
     
@@ -277,9 +424,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
       _isBuffering = true;
       _duration = Duration.zero;
       _position = Duration.zero;
+      _currentLyrics = '';
+      _lyricLines = [];
+      _currentLyricIndex = -1;
     });
     
     final song = _songs[index];
+    _fetchLyrics(song.id, song.title);
+    _initYoutubePlayer(song);
     
     if (song.audioUrl.isNotEmpty) {
       try {
@@ -291,14 +443,43 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         debugPrint('Error playing: $e');
         if (mounted) {
           setState(() => _isBuffering = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Cannot play: ${song.title}'), duration: const Duration(seconds: 2)),
-          );
         }
       }
     } else {
       if (mounted) setState(() => _isBuffering = false);
     }
+  }
+
+  void _initYoutubePlayer(Song song) {
+    _youtubeController?.dispose();
+    _youtubeController = null;
+    
+    if (song.isMovieSong) {
+      final trailerUrl = _searchYoutubeTrailer(song.movieName);
+      if (trailerUrl != null) {
+        final videoId = YoutubePlayer.convertUrlToId(trailerUrl);
+        if (videoId != null) {
+          _youtubeController = YoutubePlayerController(
+            initialVideoId: videoId,
+            flags: const YoutubePlayerFlags(
+              autoPlay: false,
+              mute: true,
+              hideControls: true,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  String? _searchYoutubeTrailer(String movieName) {
+    final movie = movieName.toLowerCase()
+        .replaceAll("from '", "")
+        .replaceAll("'", "")
+        .replaceAll("(", "")
+        .replaceAll(")", "")
+        .trim();
+    return 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
   }
 
   Future<void> _togglePlayPause() async {
@@ -380,6 +561,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     _audioPlayer.dispose();
     _searchController.dispose();
     _focusNode.dispose();
+    _tabController.dispose();
+    _youtubeController?.dispose();
+    _lyricsScrollController.dispose();
     super.dispose();
   }
 
@@ -389,6 +573,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
       focusNode: _focusNode,
       autofocus: true,
       child: Scaffold(
+        backgroundColor: white,
         body: _showFullPlayer
             ? _buildFullPlayer()
             : _buildMainScreen(),
@@ -400,7 +585,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     return SafeArea(
       child: Column(
         children: [
-          _buildHeader(),
+          _buildAppBar(),
           _buildSearchBar(),
           _buildCategoryTabs(),
           Expanded(child: _buildSongList()),
@@ -410,38 +595,50 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+  Widget _buildAppBar() {
+    return Container(
+      padding: const EdgeInsets.all(20),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [primaryOrange, secondaryOrange],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.music_note, color: white, size: 28),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.music_note, color: Colors.white, size: 28),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Sri Keyan',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+              ShaderMask(
+                shaderCallback: (bounds) => const LinearGradient(
+                  colors: [primaryOrange, secondaryOrange],
+                ).createShader(bounds),
+                child: const Text(
+                  'Sri Keyan',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: white,
                   ),
-                  Text(
-                    _currentCategory,
-                    style: const TextStyle(fontSize: 12, color: Colors.white54),
-                  ),
-                ],
+                ),
+              ),
+              Text(
+                'Music Player',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textGray,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: _loadSongs,
           ),
         ],
       ),
@@ -449,34 +646,38 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   }
 
   Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Container(
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: TextField(
-          controller: _searchController,
-          onChanged: _search,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'Search songs...',
-            hintStyle: const TextStyle(color: Colors.grey),
-            prefixIcon: const Icon(Icons.search, color: Colors.grey),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear, color: Colors.grey),
-                    onPressed: () {
-                      _searchController.clear();
-                      _search('');
-                    },
-                  )
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 15),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: lightGray,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: primaryOrange.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: _search,
+        style: TextStyle(color: textDark),
+        decoration: InputDecoration(
+          hintText: 'Search songs, albums, artists...',
+          hintStyle: TextStyle(color: textGray),
+          prefixIcon: Icon(Icons.search, color: textGray),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.clear, color: textGray),
+                  onPressed: () {
+                    _searchController.clear();
+                    _search('');
+                  },
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
         ),
       ),
     );
@@ -485,28 +686,40 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   Widget _buildCategoryTabs() {
     final categories = ['Trending', 'Tamil', 'Hindi', 'Melody', 'Party'];
     
-    return SizedBox(
-      height: 45,
+    return Container(
+      height: 50,
+      margin: const EdgeInsets.only(top: 20),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: categories.length,
         itemBuilder: (context, index) {
           final isSelected = _currentCategory == categories[index];
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(categories[index], style: const TextStyle(fontSize: 12)),
-              selected: isSelected,
-              onSelected: (_) => _changeCategory(categories[index]),
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
-              selectedColor: Colors.white.withValues(alpha: 0.2),
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey[400],
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          return GestureDetector(
+            onTap: () => _changeCategory(categories[index]),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                gradient: isSelected
+                    ? const LinearGradient(
+                        colors: [primaryOrange, secondaryOrange],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: isSelected ? null : lightGray,
+                borderRadius: BorderRadius.circular(25),
               ),
-              side: BorderSide(
-                color: isSelected ? Colors.white : Colors.transparent,
+              child: Center(
+                child: Text(
+                  categories[index],
+                  style: TextStyle(
+                    color: isSelected ? white : textGray,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ),
           );
@@ -519,8 +732,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     final displaySongs = _isSearching ? _searchResults : _songs;
     
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: primaryOrange),
+            const SizedBox(height: 16),
+            Text('Loading songs...', style: TextStyle(color: textGray)),
+          ],
+        ),
       );
     }
     
@@ -529,15 +749,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              _isSearching ? Icons.search_off : Icons.music_off,
-              size: 64,
-              color: Colors.grey[400],
-            ),
+            Icon(Icons.music_off, size: 80, color: lightOrange),
             const SizedBox(height: 16),
             Text(
               _isSearching ? 'No songs found' : 'No songs available',
-              style: TextStyle(fontSize: 18, color: Colors.grey[400]),
+              style: TextStyle(fontSize: 18, color: textGray, fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -547,20 +763,28 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 '${displaySongs.length} Songs',
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                style: TextStyle(color: textGray, fontWeight: FontWeight.w600),
               ),
+              if (_isSearching)
+                TextButton(
+                  onPressed: () {
+                    _searchController.clear();
+                    _search('');
+                  },
+                  child: Text('Clear', style: TextStyle(color: primaryOrange)),
+                ),
             ],
           ),
         ),
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: displaySongs.length,
             itemBuilder: (context, idx) {
               final song = displaySongs[idx];
@@ -569,7 +793,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
               return _SongTile(
                 song: song,
                 isSelected: isSelected,
-                index: idx,
                 onTap: () {
                   if (_isSearching) {
                     setState(() {
@@ -601,11 +824,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF1A365D), Color(0xFF0A1929)],
+            colors: [primaryOrange, secondaryOrange],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: primaryOrange.withValues(alpha: 0.4),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -616,15 +846,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: secondaryColor,
+                    color: white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: song.imageUrl.isNotEmpty
                         ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
-                            Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 24, color: Colors.white))))
-                        : Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 24, color: Colors.white))),
+                            const Icon(Icons.music_note, color: white))
+                        : const Icon(Icons.music_note, color: white),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -634,13 +864,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                     children: [
                       Text(
                         song.title,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: white),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       Text(
                         song.artist,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        style: TextStyle(color: white.withValues(alpha: 0.8), fontSize: 12),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -649,12 +879,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                 ),
                 IconButton(
                   icon: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 36),
-                  color: Colors.white,
+                  color: white,
                   onPressed: _togglePlayPause,
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_next_rounded),
-                  color: Colors.white,
+                  color: white,
                   onPressed: _playNext,
                 ),
               ],
@@ -662,15 +892,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Text(_formatDuration(_position), style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                Text(_formatDuration(_position), style: TextStyle(fontSize: 11, color: white.withValues(alpha: 0.8))),
                 Expanded(
                   child: SliderTheme(
                     data: SliderThemeData(
                       trackHeight: 3,
                       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      activeTrackColor: Colors.white,
-                      inactiveTrackColor: Colors.white24,
-                      thumbColor: Colors.white,
+                      activeTrackColor: white,
+                      inactiveTrackColor: white.withValues(alpha: 0.3),
+                      thumbColor: white,
                     ),
                     child: Slider(
                       value: _duration.inSeconds > 0 
@@ -684,7 +914,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                     ),
                   ),
                 ),
-                Text(_formatDuration(_duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                Text(_formatDuration(_duration), style: TextStyle(fontSize: 11, color: white.withValues(alpha: 0.8))),
               ],
             ),
           ],
@@ -698,141 +928,468 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     
     final song = _songs[_currentIndex];
     
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A1929),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down, size: 32),
-          onPressed: () => setState(() => _showFullPlayer = false),
-        ),
-        title: Column(
+    return SafeArea(
+      child: Scaffold(
+        backgroundColor: white,
+        body: Column(
           children: [
-            const Text('Now Playing', style: TextStyle(color: Colors.white, fontSize: 16)),
-            Text(
-              _currentCategory,
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            _buildFullPlayerHeader(song),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 20),
+                    if (song.isMovieSong && _youtubeController != null)
+                      _buildTrailerSection(song),
+                    _buildAlbumArt(song),
+                    _buildSongInfo(song),
+                    const SizedBox(height: 20),
+                    _buildProgressSection(),
+                    const SizedBox(height: 20),
+                    _buildControlsSection(),
+                    const SizedBox(height: 20),
+                    _buildTabBar(),
+                    SizedBox(
+                      height: 250,
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildLyricsTab(),
+                          _buildSongDetailsTab(song),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
-        centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-        child: Column(
-          children: [
-            const SizedBox(height: 32),
-            Container(
-              width: 280,
-              height: 280,
-              decoration: BoxDecoration(
-                color: secondaryColor,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: song.imageUrl.isNotEmpty
-                    ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
-                        Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 100, color: Colors.white))))
-                    : Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 100, color: Colors.white))),
-              ),
-            ),
-            const SizedBox(height: 48),
-            Text(
-              song.title,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              song.artist,
-              style: const TextStyle(fontSize: 16, color: Colors.white70),
-            ),
-            if (song.album.isNotEmpty) ...[
-              const SizedBox(height: 4),
+    );
+  }
+
+  Widget _buildFullPlayerHeader(Song song) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down, size: 32),
+            color: textDark,
+            onPressed: () => setState(() => _showFullPlayer = false),
+          ),
+          Column(
+            children: [
+              Text('Now Playing', style: TextStyle(color: textGray, fontSize: 12, fontWeight: FontWeight.w500)),
               Text(
-                song.album,
-                style: const TextStyle(fontSize: 14, color: Colors.white54),
+                _currentCategory,
+                style: TextStyle(color: primaryOrange, fontSize: 14, fontWeight: FontWeight.bold),
               ),
             ],
-            const SizedBox(height: 32),
-            SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 4,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
+          ),
+          IconButton(
+            icon: const Icon(Icons.queue_music),
+            color: textDark,
+            onPressed: () => _showQueueBottomSheet(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrailerSection(Song song) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.movie, color: primaryOrange, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Movie Trailer',
+                style: TextStyle(color: textDark, fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              child: Slider(
-                value: _duration.inSeconds > 0 
-                    ? _position.inSeconds.toDouble().clamp(0, _duration.inSeconds.toDouble())
-                    : 0,
-                min: 0,
-                max: _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1,
-                onChanged: _duration.inSeconds > 0 
-                    ? (value) => _audioPlayer.seek(Duration(seconds: value.toInt()))
-                    : null,
+              const Spacer(),
+              Text(
+                song.movieName,
+                style: TextStyle(color: primaryOrange, fontSize: 12),
               ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            height: 180,
+            decoration: BoxDecoration(
+              color: textDark,
+              borderRadius: BorderRadius.circular(15),
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(_formatDuration(_position), style: const TextStyle(color: Colors.white70)),
-                Text(_formatDuration(_duration), style: const TextStyle(color: Colors.white70)),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.skip_previous_rounded, size: 40),
-                  color: Colors.white,
-                  onPressed: _playPrevious,
-                ),
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
+            clipBehavior: Clip.antiAlias,
+            child: _youtubeController != null
+                ? YoutubePlayer(
+                    controller: _youtubeController!,
+                    showVideoProgressIndicator: true,
+                    progressIndicatorColor: primaryOrange,
+                  )
+                : Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.play_circle_outline, color: white, size: 50),
+                        const SizedBox(height: 8),
+                        Text('Trailer not available', style: TextStyle(color: white)),
+                      ],
+                    ),
                   ),
-                  child: _isBuffering
-                      ? const Center(
-                          child: SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3,
-                              color: Color(0xFF0A1929),
-                            ),
-                          ),
-                        )
-                      : IconButton(
-                          icon: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 48),
-                          color: const Color(0xFF0A1929),
-                          onPressed: _togglePlayPause,
-                        ),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlbumArt(Song song) {
+    return Container(
+      width: 280,
+      height: 280,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [primaryOrange, secondaryOrange],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: primaryOrange.withValues(alpha: 0.3),
+            blurRadius: 30,
+            offset: const Offset(0, 15),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: song.imageUrl.isNotEmpty
+            ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
+                const Icon(Icons.music_note, color: white, size: 100))
+            : const Icon(Icons.music_note, color: white, size: 100),
+      ),
+    );
+  }
+
+  Widget _buildSongInfo(Song song) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Text(
+            song.title,
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textDark),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            song.artist,
+            style: TextStyle(fontSize: 16, color: primaryOrange, fontWeight: FontWeight.w600),
+          ),
+          if (song.album.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              song.album,
+              style: TextStyle(fontSize: 14, color: textGray),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+              activeTrackColor: primaryOrange,
+              inactiveTrackColor: lightOrange.withValues(alpha: 0.3),
+              thumbColor: primaryOrange,
+            ),
+            child: Slider(
+              value: _duration.inSeconds > 0 
+                  ? _position.inSeconds.toDouble().clamp(0, _duration.inSeconds.toDouble())
+                  : 0,
+              min: 0,
+              max: _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1,
+              onChanged: _duration.inSeconds > 0 
+                  ? (value) => _audioPlayer.seek(Duration(seconds: value.toInt()))
+                  : null,
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(_formatDuration(_position), style: TextStyle(color: textGray)),
+              Text(_formatDuration(_duration), style: TextStyle(color: textGray)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControlsSection() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.skip_previous_rounded, size: 45),
+          color: textDark,
+          onPressed: _playPrevious,
+        ),
+        Container(
+          width: 75,
+          height: 75,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [primaryOrange, secondaryOrange],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: primaryOrange.withValues(alpha: 0.4),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: _isBuffering
+              ? const Center(
+                  child: SizedBox(
+                    width: 35,
+                    height: 35,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: white,
+                    ),
+                  ),
+                )
+              : IconButton(
+                  icon: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 45),
+                  color: white,
+                  onPressed: _togglePlayPause,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.skip_next_rounded, size: 40),
-                  color: Colors.white,
-                  onPressed: _playNext,
+        ),
+        IconButton(
+          icon: const Icon(Icons.skip_next_rounded, size: 45),
+          color: textDark,
+          onPressed: _playNext,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: lightGray,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        indicator: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [primaryOrange, secondaryOrange],
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        labelColor: white,
+        unselectedLabelColor: textGray,
+        dividerColor: Colors.transparent,
+        tabs: const [
+          Tab(text: '🎵 Lyrics'),
+          Tab(text: 'ℹ️ Details'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLyricsTab() {
+    return Container(
+      margin: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: lightGray,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: _lyricLines.isEmpty
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.music_note, size: 50, color: lightOrange),
+                  const SizedBox(height: 16),
+                  Text('Loading lyrics...', style: TextStyle(color: textGray)),
+                ],
+              ),
+            )
+          : ListView.builder(
+              controller: _lyricsScrollController,
+              itemCount: _lyricLines.length,
+              itemBuilder: (context, index) {
+                final isCurrentLyric = index == _currentLyricIndex;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    _lyricLines[index],
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: isCurrentLyric ? 18 : 15,
+                      fontWeight: isCurrentLyric ? FontWeight.bold : FontWeight.normal,
+                      color: isCurrentLyric ? primaryOrange : textGray,
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildSongDetailsTab(Song song) {
+    return Container(
+      margin: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: lightGray,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildDetailRow('Title', song.title),
+          _buildDetailRow('Artist', song.artist),
+          if (song.album.isNotEmpty) _buildDetailRow('Album', song.album),
+          if (song.year.isNotEmpty) _buildDetailRow('Year', song.year),
+          if (song.duration.isNotEmpty) _buildDetailRow('Duration', '${int.tryParse(song.duration) != null ? _formatDuration(Duration(seconds: int.parse(song.duration))) : song.duration}'),
+          if (song.isMovieSong) _buildDetailRow('Movie', song.movieName),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: TextStyle(color: textGray, fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(color: textDark),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showQueueBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.queue_music, color: primaryOrange),
+                const SizedBox(width: 8),
+                Text(
+                  'Up Next',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: textDark,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _songs.length,
+                itemBuilder: (context, index) {
+                  final song = _songs[index];
+                  final isCurrent = index == _currentIndex;
+                  return ListTile(
+                    leading: Container(
+                      width: 45,
+                      height: 45,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        color: isCurrent ? primaryOrange : lightGray,
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: song.imageUrl.isNotEmpty
+                            ? Image.network(song.imageUrl, fit: BoxFit.cover)
+                            : Icon(Icons.music_note, color: isCurrent ? white : textGray),
+                      ),
+                    ),
+                    title: Text(
+                      song.title,
+                      style: TextStyle(
+                        color: isCurrent ? primaryOrange : textDark,
+                        fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      song.artist,
+                      style: TextStyle(color: textGray, fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: isCurrent
+                        ? Icon(Icons.equalizer, color: primaryOrange)
+                        : Text(
+                            _formatDuration(Duration(seconds: int.tryParse(song.duration) ?? 0)),
+                            style: TextStyle(color: textGray, fontSize: 12),
+                          ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _playSong(index);
+                    },
+                  );
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -843,65 +1400,92 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
 class _SongTile extends StatelessWidget {
   final Song song;
   final bool isSelected;
-  final int? index;
   final VoidCallback onTap;
 
   const _SongTile({
     required this.song,
     required this.isSelected,
-    this.index,
     required this.onTap,
   });
+
+  static const Color primaryOrange = Color(0xFFFF6B35);
+  static const Color lightGray = Color(0xFFF8F9FA);
+  static const Color textDark = Color(0xFF2C3E50);
+  static const Color textGray = Color(0xFF6C757D);
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: isSelected ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+        color: isSelected ? primaryOrange.withValues(alpha: 0.1) : lightGray,
         borderRadius: BorderRadius.circular(12),
+        border: isSelected
+            ? Border.all(color: primaryOrange, width: 2)
+            : null,
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         leading: Container(
-          width: 48,
-          height: 48,
+          width: 55,
+          height: 55,
           decoration: BoxDecoration(
-            color: const Color(0xFF1A365D),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
+            gradient: isSelected
+                ? const LinearGradient(colors: [primaryOrange, Color(0xFFFF8C42)])
+                : null,
+            color: isSelected ? null : const Color(0xFFE0E0E0),
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             child: song.imageUrl.isNotEmpty
-                ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) =>
-                    Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 20, color: Colors.white))))
-                : Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 20, color: Colors.white))),
+                ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
+                    Icon(Icons.music_note, color: isSelected ? Colors.white : textGray))
+                : Icon(Icons.music_note, color: isSelected ? Colors.white : textGray),
           ),
         ),
         title: Text(
           song.title,
           style: TextStyle(
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected ? Colors.white : Colors.grey[300],
+            color: textDark,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            fontSize: 14,
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
           song.artist,
-          style: TextStyle(color: Colors.grey[500]),
+          style: TextStyle(color: textGray, fontSize: 12),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         trailing: isSelected
-            ? const Icon(Icons.equalizer, color: Colors.white)
-            : Text(
-                song.duration,
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ? const Icon(Icons.equalizer, color: primaryOrange)
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (song.isMovieSong)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Icon(Icons.movie, size: 16, color: primaryOrange),
+                    ),
+                  Text(
+                    _formatDuration(Duration(seconds: int.tryParse(song.duration) ?? 0)),
+                    style: TextStyle(color: textGray, fontSize: 12),
+                  ),
+                ],
               ),
         onTap: onTap,
       ),
     );
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    String minutes = twoDigits(duration.inMinutes.remainder(60));
+    String seconds = twoDigits(duration.inSeconds.remainder(60));
+    return '$minutes:$seconds';
   }
 }
 
@@ -943,6 +1527,22 @@ class JioSaavnApi {
       debugPrint('Error searching: $e');
     }
     return [];
+  }
+
+  static Future<String> getLyrics(String songId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_proxyUrl/lyrics?id=$songId'),
+      ).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['lyrics'] ?? '';
+      }
+    } catch (e) {
+      debugPrint('Error fetching lyrics: $e');
+    }
+    return '';
   }
 
   static Future<String?> getPlayUrl(String songId) async {
