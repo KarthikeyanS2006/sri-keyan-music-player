@@ -263,7 +263,7 @@ class MusicPlayerScreen extends StatefulWidget {
   State<MusicPlayerScreen> createState() => _MusicPlayerScreenState();
 }
 
-class _MusicPlayerScreenState extends State<MusicPlayerScreen> with SingleTickerProviderStateMixin {
+class _MusicPlayerScreenState extends State<MusicPlayerScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
@@ -284,6 +284,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with SingleTicker
   List<String> _lyricLines = [];
   int _currentLyricIndex = -1;
   final ScrollController _lyricsScrollController = ScrollController();
+  bool _isDesktop = false;
+  bool _isTablet = false;
+
+  bool get isMobile => !_isDesktop && !_isTablet;
+
+  void _updateDeviceType() {
+    final width = MediaQuery.of(context).size.width;
+    setState(() {
+      _isDesktop = width > 1024;
+      _isTablet = width > 600 && width <= 1024;
+    });
+  }
 
   static const Color primaryOrange = Color(0xFFFF6B35);
   static const Color secondaryOrange = Color(0xFFFF8C42);
@@ -296,9 +308,26 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateDeviceType();
+    });
     _loadSongs();
     _focusNode.requestFocus();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateDeviceType();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _updateDeviceType();
+    }
   }
 
   Future<void> _loadSongs() async {
@@ -538,6 +567,7 @@ Thank you for listening!''';
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _audioPlayer.dispose();
     _searchController.dispose();
     _focusNode.dispose();
@@ -561,6 +591,9 @@ Thank you for listening!''';
   }
 
   Widget _buildMainScreen() {
+    if (_isDesktop) {
+      return _buildDesktopLayout();
+    }
     return SafeArea(
       child: Column(
         children: [
@@ -569,6 +602,124 @@ Thank you for listening!''';
           _buildCategoryTabs(),
           Expanded(child: _buildSongList()),
           if (_songs.isNotEmpty) _buildMiniPlayer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return SafeArea(
+      child: Row(
+        children: [
+          // Side panel for desktop
+          Container(
+            width: 320,
+            decoration: BoxDecoration(
+              color: white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(2, 0),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _buildAppBar(),
+                _buildSearchBar(),
+                _buildCategoryTabs(),
+                Expanded(child: _buildSongList()),
+              ],
+            ),
+          ),
+          // Main content area
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: _buildDesktopNowPlaying(),
+                ),
+                if (_songs.isNotEmpty) _buildMiniPlayer(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopNowPlaying() {
+    if (_songs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.music_note, size: 100, color: lightOrange),
+            const SizedBox(height: 20),
+            Text(
+              'Select a song to play',
+              style: TextStyle(color: textGray, fontSize: 18),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    final song = _songs[_currentIndex];
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        children: [
+          if (song.isMovieSong) _buildTrailerSection(song),
+          _buildAlbumArt(song),
+          const SizedBox(height: 24),
+          Text(
+            song.title,
+            style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: textDark),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            song.artist,
+            style: TextStyle(fontSize: 18, color: primaryOrange, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 24),
+          _buildProgressSection(),
+          const SizedBox(height: 24),
+          _buildControlsSection(),
+          const SizedBox(height: 24),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 100),
+            decoration: BoxDecoration(
+              color: lightGray,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                gradient: const LinearGradient(colors: [primaryOrange, secondaryOrange]),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              labelColor: white,
+              unselectedLabelColor: textGray,
+              dividerColor: Colors.transparent,
+              tabs: const [
+                Tab(text: '🎵 Lyrics'),
+                Tab(text: 'ℹ️ Details'),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 280,
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildLyricsTab(),
+                _buildSongDetailsTab(song),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1524,8 +1675,23 @@ class JioSaavnApi {
 
   static Future<String> getLyrics(String songId) async {
     try {
+      // Try official API first
       final response = await http.get(
-        Uri.parse('$_proxyUrl/lyrics?id=$songId'),
+        Uri.parse('$_apiUrl/lyrics/?id=$songId'),
+      ).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['lyrics'] ?? '';
+      }
+    } catch (e) {
+      debugPrint('Error fetching lyrics from API: $e');
+    }
+    
+    // Try from song details
+    try {
+      final response = await http.get(
+        Uri.parse('$_apiUrl/song/?id=$songId'),
       ).timeout(const Duration(seconds: 10));
       
       if (response.statusCode == 200) {
