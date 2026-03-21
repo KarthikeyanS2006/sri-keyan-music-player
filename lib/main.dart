@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -102,7 +101,7 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'MassTamil Music',
+                          'Tamil Music Player',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.white70,
@@ -155,29 +154,6 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
   }
 }
 
-class Album {
-  final String title;
-  final String url;
-  final String image;
-  final String info;
-
-  Album({
-    required this.title,
-    required this.url,
-    required this.image,
-    required this.info,
-  });
-
-  factory Album.fromJson(Map<String, dynamic> json) {
-    return Album(
-      title: json['title'] ?? '',
-      url: json['url'] ?? '',
-      image: json['image'] ?? '',
-      info: json['info'] ?? '',
-    );
-  }
-}
-
 class Song {
   final String id;
   final String title;
@@ -186,6 +162,7 @@ class Song {
   final String imageUrl;
   final String audioUrl;
   final String duration;
+  final String url;
 
   Song({
     required this.id,
@@ -195,17 +172,19 @@ class Song {
     required this.imageUrl,
     required this.audioUrl,
     required this.duration,
+    this.url = '',
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
     return Song(
-      id: json['id'] ?? '',
-      title: json['title'] ?? 'Unknown',
-      artist: json['artist'] ?? 'Unknown Artist',
+      id: json['id'] ?? json['e_songid'] ?? '',
+      title: json['song'] ?? json['title'] ?? 'Unknown',
+      artist: json['primary_artists'] ?? json['singers'] ?? 'Unknown Artist',
       album: json['album'] ?? '',
       imageUrl: json['image'] ?? '',
-      audioUrl: json['url'] ?? '',
-      duration: json['duration'] ?? '0:00',
+      audioUrl: json['media_url'] ?? '',
+      duration: json['duration'] ?? '0',
+      url: json['perma_url'] ?? json['url'] ?? '',
     );
   }
 }
@@ -222,22 +201,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   
-  List<Album> _albums = [];
   List<Song> _songs = [];
   List<Song> _searchResults = [];
-  List<dynamic> _searchAlbums = [];
   int _currentIndex = 0;
   bool _isPlaying = false;
   bool _isLoading = true;
   bool _isSearching = false;
   bool _isBuffering = false;
-  bool _showAlbumView = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   double _volume = 1.0;
   bool _showFullPlayer = false;
-  String _currentAlbum = 'Latest Tamil Songs';
-  Album? _currentAlbumData;
+  String _currentCategory = 'Trending Tamil Songs';
 
   static const Color primaryColor = Color(0xFF0A1929);
   static const Color secondaryColor = Color(0xFF1A365D);
@@ -245,41 +220,21 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAlbums();
+    _loadSongs();
     _focusNode.requestFocus();
   }
 
-  Future<void> _loadAlbums() async {
+  Future<void> _loadSongs() async {
     setState(() => _isLoading = true);
     try {
-      final albums = await MassTamilApi.getLatest();
-      setState(() {
-        _albums = albums;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _loadAlbum(Album album) async {
-    setState(() {
-      _isLoading = true;
-      _showAlbumView = true;
-      _currentAlbum = album.title;
-      _currentAlbumData = album;
-    });
-    
-    try {
-      final songs = await MassTamilApi.getAlbumSongs(album.url);
+      final songs = await JioSaavnApi.getHome();
       setState(() {
         _songs = songs;
         _isLoading = false;
       });
-      if (songs.isNotEmpty) {
-        _playSong(0);
-      }
+      _initAudio();
     } catch (e) {
+      debugPrint('Error loading songs: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -326,10 +281,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
       try {
         await _audioPlayer.setUrl(song.audioUrl);
         await _audioPlayer.play();
-        _initAudio();
       } catch (e) {
         debugPrint('Error playing: $e');
         if (mounted) setState(() => _isBuffering = false);
+      }
+    } else {
+      // Try to get audio URL from play endpoint
+      final audioUrl = await JioSaavnApi.getPlayUrl(song.id);
+      if (audioUrl != null && audioUrl.isNotEmpty) {
+        try {
+          await _audioPlayer.setUrl(audioUrl);
+          await _audioPlayer.play();
+        } catch (e) {
+          debugPrint('Error playing: $e');
+          if (mounted) setState(() => _isBuffering = false);
+        }
+      } else if (mounted) {
+        setState(() => _isBuffering = false);
       }
     }
   }
@@ -363,25 +331,49 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     setState(() => _isSearching = query.isNotEmpty);
     
     if (query.isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _searchAlbums = [];
-      });
+      setState(() => _searchResults = []);
       return;
     }
 
     try {
-      final results = await MassTamilApi.search(query);
-      setState(() {
-        _searchResults = results['songs'] ?? [];
-        _searchAlbums = results['albums'] ?? [];
-      });
+      final results = await JioSaavnApi.search(query);
+      setState(() => _searchResults = results);
     } catch (e) {
-      setState(() {
-        _searchResults = [];
-        _searchAlbums = [];
-      });
+      setState(() => _searchResults = []);
     }
+  }
+
+  void _changeCategory(String category) async {
+    setState(() {
+      _currentCategory = category;
+      _isLoading = true;
+      _isSearching = false;
+      _searchController.clear();
+    });
+    
+    List<Song> songs;
+    switch (category) {
+      case 'Tamil':
+        songs = await JioSaavnApi.search('tamil songs');
+        break;
+      case 'Hindi':
+        songs = await JioSaavnApi.search('hindi songs');
+        break;
+      case 'Melody':
+        songs = await JioSaavnApi.search('tamil melody songs');
+        break;
+      case 'Party':
+        songs = await JioSaavnApi.search('tamil party songs');
+        break;
+      case 'Trending':
+      default:
+        songs = await JioSaavnApi.getHome();
+    }
+    
+    setState(() {
+      _songs = songs.isNotEmpty ? songs : _songs;
+      _isLoading = false;
+    });
   }
 
   @override
@@ -411,10 +403,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
         children: [
           _buildHeader(),
           _buildSearchBar(),
-          Expanded(
-            child: _isSearching ? _buildSearchResults() : _buildAlbumGrid(),
-          ),
-          if (_songs.isNotEmpty && _showAlbumView) _buildMiniPlayer(),
+          _buildCategoryTabs(),
+          Expanded(child: _buildSongList()),
+          if (_songs.isNotEmpty) _buildMiniPlayer(),
         ],
       ),
     );
@@ -442,31 +433,16 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                     ),
                   ),
                   Text(
-                    _currentAlbum,
+                    _currentCategory,
                     style: const TextStyle(fontSize: 12, color: Colors.white54),
                   ),
                 ],
               ),
             ],
           ),
-          Row(
-            children: [
-              if (_showAlbumView)
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () {
-                    setState(() {
-                      _showAlbumView = false;
-                      _songs = [];
-                      _audioPlayer.stop();
-                    });
-                  },
-                ),
-              IconButton(
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                onPressed: _loadAlbums,
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: _loadSongs,
           ),
         ],
       ),
@@ -487,7 +463,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
           onChanged: _search,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
-            hintText: 'Search Tamil songs...',
+            hintText: 'Search songs...',
             hintStyle: const TextStyle(color: Colors.grey),
             prefixIcon: const Icon(Icons.search, color: Colors.grey),
             suffixIcon: _searchController.text.isNotEmpty
@@ -507,108 +483,110 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     );
   }
 
-  Widget _buildAlbumGrid() {
+  Widget _buildCategoryTabs() {
+    final categories = ['Trending', 'Tamil', 'Hindi', 'Melody', 'Party'];
+    
+    return SizedBox(
+      height: 45,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: categories.length,
+        itemBuilder: (context, index) {
+          final isSelected = _currentCategory == categories[index];
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: FilterChip(
+              label: Text(categories[index], style: const TextStyle(fontSize: 12)),
+              selected: isSelected,
+              onSelected: (_) => _changeCategory(categories[index]),
+              backgroundColor: Colors.white.withValues(alpha: 0.1),
+              selectedColor: Colors.white.withValues(alpha: 0.2),
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey[400],
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+              side: BorderSide(
+                color: isSelected ? Colors.white : Colors.transparent,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSongList() {
+    final displaySongs = _isSearching ? _searchResults : _songs;
+    
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: Colors.white),
       );
     }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.85,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: _albums.length,
-      itemBuilder: (context, index) {
-        final album = _albums[index];
-        return _AlbumCard(
-          album: album,
-          onTap: () => _loadAlbum(album),
-        );
-      },
-    );
-  }
-
-  Widget _buildSearchResults() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_searchAlbums.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Movies',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+    
+    if (displaySongs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              _isSearching ? Icons.search_off : Icons.music_off,
+              size: 64,
+              color: Colors.grey[400],
             ),
-            SizedBox(
-              height: 140,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _searchAlbums.length,
-                itemBuilder: (context, index) {
-                  final album = _searchAlbums[index];
-                  return _AlbumCard(
-                    album: Album(
-                      title: album['title'] ?? '',
-                      url: album['url'] ?? '',
-                      image: album['image'] ?? '',
-                      info: '',
-                    ),
-                    onTap: () => _loadAlbum(Album.fromJson(album)),
-                  );
-                },
-              ),
+            const SizedBox(height: 16),
+            Text(
+              _isSearching ? 'No songs found' : 'No songs available',
+              style: TextStyle(fontSize: 18, color: Colors.grey[400]),
             ),
           ],
-          if (_searchResults.isNotEmpty) ...[
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Songs',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '${displaySongs.length} Songs',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
-            ),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _searchResults.length,
-              itemBuilder: (context, index) {
-                return _SongTile(
-                  song: _searchResults[index],
-                  index: index,
-                  onTap: () {
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: displaySongs.length,
+            itemBuilder: (context, idx) {
+              final song = displaySongs[idx];
+              final isSelected = idx == _currentIndex && !_isSearching;
+              
+              return _SongTile(
+                song: song,
+                isSelected: isSelected,
+                index: idx,
+                onTap: () {
+                  if (_isSearching) {
                     setState(() {
-                      _songs = _searchResults;
-                      _currentIndex = index;
-                      _showAlbumView = true;
-                      _searchController.clear();
+                      _songs = List.from(_searchResults);
+                      _currentIndex = idx;
                       _isSearching = false;
+                      _searchController.clear();
                     });
-                    _playSong(index);
-                  },
-                );
-              },
-            ),
-          ],
-          if (_searchAlbums.isEmpty && _searchResults.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text(
-                  'No results found',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            ),
-        ],
-      ),
+                  }
+                  _playSong(_isSearching ? _songs.indexOf(song) : idx);
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -646,8 +624,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                     borderRadius: BorderRadius.circular(12),
                     child: song.imageUrl.isNotEmpty
                         ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
-                            Center(child: Text(song.title[0], style: const TextStyle(fontSize: 24, color: Colors.white))))
-                        : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 24, color: Colors.white))),
+                            Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 24, color: Colors.white))))
+                        : Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 24, color: Colors.white))),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -664,6 +642,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                       Text(
                         song.artist,
                         style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -728,7 +708,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
           children: [
             const Text('Now Playing', style: TextStyle(color: Colors.white, fontSize: 16)),
             Text(
-              _currentAlbum,
+              _currentCategory,
               style: const TextStyle(color: Colors.white54, fontSize: 11),
             ),
           ],
@@ -758,8 +738,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                 borderRadius: BorderRadius.circular(24),
                 child: song.imageUrl.isNotEmpty
                     ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
-                        Center(child: Text(song.title[0], style: const TextStyle(fontSize: 100, color: Colors.white))))
-                    : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 100, color: Colors.white))),
+                        Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 100, color: Colors.white))))
+                    : Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 100, color: Colors.white))),
               ),
             ),
             const SizedBox(height: 48),
@@ -775,6 +755,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
               song.artist,
               style: const TextStyle(fontSize: 16, color: Colors.white70),
             ),
+            if (song.album.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                song.album,
+                style: const TextStyle(fontSize: 14, color: Colors.white54),
+              ),
+            ],
             const SizedBox(height: 32),
             SliderTheme(
               data: SliderThemeData(
@@ -833,87 +820,29 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   }
 }
 
-class _AlbumCard extends StatelessWidget {
-  final Album album;
-  final VoidCallback onTap;
-
-  const _AlbumCard({required this.album, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                child: album.image.isNotEmpty
-                    ? Image.network(
-                        album.image,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFF1A365D),
-                          child: const Center(
-                            child: Icon(Icons.music_note, size: 40, color: Colors.white54),
-                          ),
-                        ),
-                      )
-                    : Container(
-                        color: const Color(0xFF1A365D),
-                        child: const Center(
-                          child: Icon(Icons.music_note, size: 40, color: Colors.white54),
-                        ),
-                      ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                album.title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SongTile extends StatelessWidget {
   final Song song;
-  final int index;
+  final bool isSelected;
+  final int? index;
   final VoidCallback onTap;
 
   const _SongTile({
     required this.song,
-    required this.index,
+    required this.isSelected,
+    this.index,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: isSelected ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         leading: Container(
           width: 48,
           height: 48,
@@ -925,92 +854,73 @@ class _SongTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             child: song.imageUrl.isNotEmpty
                 ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) =>
-                    Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))))
-                : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))),
+                    Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 20, color: Colors.white))))
+                : Center(child: Text(song.title.isNotEmpty ? song.title[0] : '?', style: const TextStyle(fontSize: 20, color: Colors.white))),
           ),
         ),
         title: Text(
           song.title,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? Colors.white : Colors.grey[300],
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
           song.artist,
-          style: const TextStyle(color: Colors.grey),
+          style: TextStyle(color: Colors.grey[500]),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: Text(
-          song.duration,
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
-        ),
+        trailing: isSelected
+            ? const Icon(Icons.equalizer, color: Colors.white)
+            : Text(
+                song.duration,
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
         onTap: onTap,
       ),
     );
   }
 }
 
-class MassTamilApi {
-  static String get _baseUrl {
-    if (kIsWeb) {
-      return 'https://sri-keyan-music-player.onrender.com';
+class JioSaavnApi {
+  static const String _baseUrl = 'https://saavnapi-nine.vercel.app';
+
+  static Future<List<Song>> getHome() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/result/?query=tamil+songs'),
+      ).timeout(const Duration(seconds: 15));
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        return data.map((item) => Song.fromJson(item)).toList();
+      }
+    } catch (e) {
+      debugPrint('Error fetching home: $e');
     }
-    return 'http://localhost:5000';
-  }
-
-  static Future<List<Album>> getLatest() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/latest'),
-      ).timeout(const Duration(seconds: 15));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> albums = data['albums'] ?? [];
-        return albums.map((item) => Album.fromJson(item)).toList();
-      }
-    } catch (_) {}
     return [];
   }
 
-  static Future<List<Song>> getAlbumSongs(String url) async {
+  static Future<List<Song>> search(String query) async {
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/album?url=${Uri.encodeComponent(url)}'),
+        Uri.parse('$_baseUrl/result/?query=${Uri.encodeComponent(query)}'),
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> songs = data['songs'] ?? [];
-        return songs.map((item) => Song.fromJson(item)).toList();
+        final List<dynamic> data = json.decode(response.body);
+        return data.map((item) => Song.fromJson(item)).toList();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error searching: $e');
+    }
     return [];
   }
 
-  static Future<Map<String, dynamic>> search(String query) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/search?q=${Uri.encodeComponent(query)}'),
-      ).timeout(const Duration(seconds: 15));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final results = data['results'] ?? [];
-        
-        List<Song> songs = [];
-        List<dynamic> albums = [];
-        
-        for (var item in results) {
-          if (item['type'] == 'movie') {
-            albums.add(item);
-          }
-        }
-        
-        return {'songs': songs, 'albums': albums};
-      }
-    } catch (_) {}
-    return {'songs': [], 'albums': []};
+  static Future<String?> getPlayUrl(String songId) async {
+    return null;
   }
 }
