@@ -354,6 +354,32 @@ def lyrics():
     except Exception as e:
         return jsonify({'lyrics': '', 'error': str(e)})
 
+@app.route('/proxy')
+def proxy():
+    """Proxy audio requests with CORS headers"""
+    url = request.args.get('url', '')
+    
+    if not url:
+        return jsonify({'error': 'url parameter required'}), 400
+    
+    try:
+        response = requests.get(url, stream=True, headers=HEADERS, timeout=30)
+        
+        return Response(
+            response.iter_content(chunk_size=8192),
+            status=response.status_code,
+            headers={
+                'Content-Type': 'audio/mp4',
+                'Content-Length': response.headers.get('Content-Length', ''),
+                'Accept-Ranges': 'bytes',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': '*',
+            }
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     print("JioSaavn Music Server running at http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=False)

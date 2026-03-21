@@ -241,8 +241,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
 
   Future<void> _initAudio() async {
     _audioPlayer.durationStream.listen((duration) {
-      if (mounted) {
-        setState(() => _duration = duration ?? Duration.zero);
+      if (mounted && duration != null && duration.inSeconds > 0) {
+        setState(() => _duration = duration);
       }
     });
 
@@ -258,11 +258,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
           _isPlaying = state.playing;
           _isBuffering = state.processingState == ProcessingState.loading || 
                          state.processingState == ProcessingState.buffering;
+          
+          if (state.processingState == ProcessingState.completed) {
+            _playNext();
+          } else if (state.processingState == ProcessingState.idle) {
+            _isBuffering = false;
+          }
         });
-        
-        if (state.processingState == ProcessingState.completed) {
-          _playNext();
-        }
       }
     });
   }
@@ -273,32 +275,29 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     setState(() {
       _currentIndex = index;
       _isBuffering = true;
+      _duration = Duration.zero;
+      _position = Duration.zero;
     });
     
     final song = _songs[index];
     
     if (song.audioUrl.isNotEmpty) {
       try {
-        await _audioPlayer.setUrl(song.audioUrl);
+        await _audioPlayer.stop();
+        final playUrl = JioSaavnApi.getProxyUrl(song.audioUrl);
+        await _audioPlayer.setUrl(playUrl);
         await _audioPlayer.play();
       } catch (e) {
         debugPrint('Error playing: $e');
-        if (mounted) setState(() => _isBuffering = false);
+        if (mounted) {
+          setState(() => _isBuffering = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cannot play: ${song.title}'), duration: const Duration(seconds: 2)),
+          );
+        }
       }
     } else {
-      // Try to get audio URL from play endpoint
-      final audioUrl = await JioSaavnApi.getPlayUrl(song.id);
-      if (audioUrl != null && audioUrl.isNotEmpty) {
-        try {
-          await _audioPlayer.setUrl(audioUrl);
-          await _audioPlayer.play();
-        } catch (e) {
-          debugPrint('Error playing: $e');
-          if (mounted) setState(() => _isBuffering = false);
-        }
-      } else if (mounted) {
-        setState(() => _isBuffering = false);
-      }
+      if (mounted) setState(() => _isBuffering = false);
     }
   }
 
@@ -674,10 +673,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                       thumbColor: Colors.white,
                     ),
                     child: Slider(
-                      value: _position.inSeconds.toDouble(),
+                      value: _duration.inSeconds > 0 
+                          ? _position.inSeconds.toDouble().clamp(0, _duration.inSeconds.toDouble())
+                          : 0,
                       min: 0,
-                      max: _duration.inSeconds.toDouble().clamp(1, double.infinity),
-                      onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
+                      max: _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1,
+                      onChanged: _duration.inSeconds > 0 
+                          ? (value) => _audioPlayer.seek(Duration(seconds: value.toInt()))
+                          : null,
                     ),
                   ),
                 ),
@@ -772,10 +775,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                 thumbColor: Colors.white,
               ),
               child: Slider(
-                value: _position.inSeconds.toDouble(),
+                value: _duration.inSeconds > 0 
+                    ? _position.inSeconds.toDouble().clamp(0, _duration.inSeconds.toDouble())
+                    : 0,
                 min: 0,
-                max: _duration.inSeconds.toDouble().clamp(1, double.infinity),
-                onChanged: (value) => _audioPlayer.seek(Duration(seconds: value.toInt())),
+                max: _duration.inSeconds > 0 ? _duration.inSeconds.toDouble() : 1,
+                onChanged: _duration.inSeconds > 0 
+                    ? (value) => _audioPlayer.seek(Duration(seconds: value.toInt()))
+                    : null,
               ),
             ),
             Row(
@@ -795,15 +802,28 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   onPressed: _playPrevious,
                 ),
                 Container(
+                  width: 72,
+                  height: 72,
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
                   ),
-                  child: IconButton(
-                    icon: Icon(_isBuffering ? Icons.hourglass_empty : (_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded), size: 48),
-                    color: const Color(0xFF0A1929),
-                    onPressed: _togglePlayPause,
-                  ),
+                  child: _isBuffering
+                      ? const Center(
+                          child: SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3,
+                              color: Color(0xFF0A1929),
+                            ),
+                          ),
+                        )
+                      : IconButton(
+                          icon: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 48),
+                          color: const Color(0xFF0A1929),
+                          onPressed: _togglePlayPause,
+                        ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_next_rounded, size: 40),
@@ -886,12 +906,17 @@ class _SongTile extends StatelessWidget {
 }
 
 class JioSaavnApi {
-  static const String _baseUrl = 'https://saavnapi-nine.vercel.app';
+  static const String _apiUrl = 'https://saavnapi-nine.vercel.app';
+  static const String _proxyUrl = 'https://sri-keyan-music-player.onrender.com';
+
+  static String getProxyUrl(String audioUrl) {
+    return '$_proxyUrl/proxy?url=${Uri.encodeComponent(audioUrl)}';
+  }
 
   static Future<List<Song>> getHome() async {
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/result/?query=tamil+songs'),
+        Uri.parse('$_apiUrl/result/?query=tamil+songs'),
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200) {
@@ -907,7 +932,7 @@ class JioSaavnApi {
   static Future<List<Song>> search(String query) async {
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/result/?query=${Uri.encodeComponent(query)}'),
+        Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(query)}'),
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200) {
