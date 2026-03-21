@@ -102,7 +102,7 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Music Player',
+                          'MassTamil Music',
                           style: TextStyle(
                             fontSize: 16,
                             color: Colors.white70,
@@ -135,21 +135,6 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
       title: 'Sri Keyan',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        brightness: Brightness.light,
-        primaryColor: const Color(0xFF0A1929),
-        scaffoldBackgroundColor: Colors.white,
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0A1929),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        colorScheme: const ColorScheme.light(
-          primary: Color(0xFF0A1929),
-          secondary: Color(0xFF1A365D),
-          surface: Colors.white,
-        ),
-      ),
-      darkTheme: ThemeData(
         brightness: Brightness.dark,
         primaryColor: Colors.white,
         scaffoldBackgroundColor: const Color(0xFF0A1929),
@@ -166,6 +151,29 @@ class _MusicAppState extends State<MusicApp> with SingleTickerProviderStateMixin
       ),
       themeMode: ThemeMode.dark,
       home: const MusicPlayerScreen(),
+    );
+  }
+}
+
+class Album {
+  final String title;
+  final String url;
+  final String image;
+  final String info;
+
+  Album({
+    required this.title,
+    required this.url,
+    required this.image,
+    required this.info,
+  });
+
+  factory Album.fromJson(Map<String, dynamic> json) {
+    return Album(
+      title: json['title'] ?? '',
+      url: json['url'] ?? '',
+      image: json['image'] ?? '',
+      info: json['info'] ?? '',
     );
   }
 }
@@ -194,10 +202,10 @@ class Song {
       id: json['id'] ?? '',
       title: json['title'] ?? 'Unknown',
       artist: json['artist'] ?? 'Unknown Artist',
-      album: json['album'] ?? 'Unknown Album',
+      album: json['album'] ?? '',
       imageUrl: json['image'] ?? '',
-      audioUrl: json['audio'] ?? '',
-      duration: json['duration'] ?? '0',
+      audioUrl: json['url'] ?? '',
+      duration: json['duration'] ?? '0:00',
     );
   }
 }
@@ -213,23 +221,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final TextEditingController _headersController = TextEditingController();
   
-  List<Song> _allSongs = [];
+  List<Album> _albums = [];
   List<Song> _songs = [];
   List<Song> _searchResults = [];
+  List<dynamic> _searchAlbums = [];
   int _currentIndex = 0;
   bool _isPlaying = false;
   bool _isLoading = true;
   bool _isSearching = false;
   bool _isBuffering = false;
-  bool _isConnected = false;
-  bool _isSettingUp = false;
+  bool _showAlbumView = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   double _volume = 1.0;
   bool _showFullPlayer = false;
-  String _currentPlaylist = 'Tamil Hits';
+  String _currentAlbum = 'Latest Tamil Songs';
+  Album? _currentAlbumData;
 
   static const Color primaryColor = Color(0xFF0A1929);
   static const Color secondaryColor = Color(0xFF1A365D);
@@ -237,66 +245,46 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _checkConnection();
+    _loadAlbums();
     _focusNode.requestFocus();
   }
 
-  Future<void> _checkConnection() async {
-    final connected = await MusicApiService.checkConnection();
-    if (mounted) {
-      setState(() => _isConnected = connected);
-      if (connected) {
-        _loadSongs();
-      } else {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _setupConnection() async {
-    final headers = _headersController.text.trim();
-    if (headers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter authentication headers')),
-      );
-      return;
-    }
-    
-    setState(() => _isSettingUp = true);
-    
-    final success = await MusicApiService.setup(headers);
-    
-    if (mounted) {
-      setState(() => _isSettingUp = false);
-      if (success) {
-        setState(() => _isConnected = true);
-        _loadSongs();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Setup failed. Check your headers.')),
-        );
-      }
-    }
-  }
-
-  Future<void> _loadSongs() async {
+  Future<void> _loadAlbums() async {
     setState(() => _isLoading = true);
     try {
-      final songs = await MusicApiService.getHomeSongs();
+      final albums = await MassTamilApi.getLatest();
       setState(() {
-        _allSongs = songs;
+        _albums = albums;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadAlbum(Album album) async {
+    setState(() {
+      _isLoading = true;
+      _showAlbumView = true;
+      _currentAlbum = album.title;
+      _currentAlbumData = album;
+    });
+    
+    try {
+      final songs = await MassTamilApi.getAlbumSongs(album.url);
+      setState(() {
         _songs = songs;
         _isLoading = false;
       });
-      _initAudio();
+      if (songs.isNotEmpty) {
+        _playSong(0);
+      }
     } catch (e) {
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> _initAudio() async {
-    if (_songs.isEmpty) return;
-    
     _audioPlayer.durationStream.listen((duration) {
       if (mounted) {
         setState(() => _duration = duration ?? Duration.zero);
@@ -333,18 +321,16 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     });
     
     final song = _songs[index];
-    String? audioUrl = await MusicApiService.getStreamUrl(song.id);
     
-    if (audioUrl != null && audioUrl.isNotEmpty) {
+    if (song.audioUrl.isNotEmpty) {
       try {
-        await _audioPlayer.setUrl(audioUrl);
+        await _audioPlayer.setUrl(song.audioUrl);
         await _audioPlayer.play();
+        _initAudio();
       } catch (e) {
-        debugPrint('Error: $e');
+        debugPrint('Error playing: $e');
         if (mounted) setState(() => _isBuffering = false);
       }
-    } else {
-      if (mounted) setState(() => _isBuffering = false);
     }
   }
 
@@ -366,11 +352,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     await _playSong(prevIndex);
   }
 
-  Future<void> _setVolume(double value) async {
-    setState(() => _volume = value.clamp(0.0, 1.0));
-    await _audioPlayer.setVolume(_volume);
-  }
-
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     String minutes = twoDigits(duration.inMinutes.remainder(60));
@@ -384,179 +365,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     if (query.isEmpty) {
       setState(() {
         _searchResults = [];
-        _isSearching = false;
+        _searchAlbums = [];
       });
       return;
     }
 
     try {
-      final results = await MusicApiService.searchSongs(query);
-      setState(() => _searchResults = results);
-    } catch (e) {
-      setState(() => _searchResults = []);
-    }
-  }
-
-  void _changePlaylist(String playlist) async {
-    setState(() {
-      _currentPlaylist = playlist;
-      _isLoading = true;
-      _isSearching = false;
-      _searchController.clear();
-    });
-    
-    try {
-      List<Song> songs;
-      switch (playlist) {
-        case 'Top Trending':
-          songs = await MusicApiService.searchSongs('top tamil songs 2024');
-          break;
-        case 'Most Played':
-          songs = await MusicApiService.searchSongs('most viewed tamil songs');
-          break;
-        case '2024 Hits':
-          songs = await MusicApiService.searchSongs('tamil 2024 hits');
-          break;
-        case '2023 Hits':
-          songs = await MusicApiService.searchSongs('tamil 2023 hits');
-          break;
-        case '2022 Hits':
-          songs = await MusicApiService.searchSongs('tamil 2022 hits');
-          break;
-        case '90s Tamil':
-          songs = await MusicApiService.searchSongs('90s tamil songs');
-          break;
-        case 'Melody Songs':
-          songs = await MusicApiService.searchSongs('tamil melody songs');
-          break;
-        case 'Party Songs':
-          songs = await MusicApiService.searchSongs('tamil party songs');
-          break;
-        case 'Sad Songs':
-          songs = await MusicApiService.searchSongs('tamil sad songs');
-          break;
-        case 'Romance':
-          songs = await MusicApiService.searchSongs('tamil love songs');
-          break;
-        case 'Devotional':
-          songs = await MusicApiService.searchSongs('tamil devotional songs');
-          break;
-        case 'Hip Hop':
-          songs = await MusicApiService.searchSongs('tamil hiphop songs');
-          break;
-        case 'Tamil Hits':
-        default:
-          songs = await MusicApiService.getHomeSongs();
-      }
-      
+      final results = await MassTamilApi.search(query);
       setState(() {
-        _songs = songs.isNotEmpty ? songs : _allSongs;
-        _isLoading = false;
+        _searchResults = results['songs'] ?? [];
+        _searchAlbums = results['albums'] ?? [];
       });
     } catch (e) {
       setState(() {
-        _songs = _allSongs;
-        _isLoading = false;
+        _searchResults = [];
+        _searchAlbums = [];
       });
     }
-  }
-
-  void _showAbout() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: primaryColor,
-        title: const Row(
-          children: [
-            Icon(Icons.music_note, color: Colors.white, size: 32),
-            SizedBox(width: 12),
-            Text('Sri Keyan', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Tamil Music Player', style: TextStyle(color: Colors.white70)),
-            SizedBox(height: 16),
-            Text('Developer: karthikeyan S', 
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            SizedBox(height: 8),
-            Text('Powered by YouTube Music API', style: TextStyle(color: Colors.white60, fontSize: 12)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showShortcuts() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: primaryColor,
-        title: const Text('Keyboard Controls', style: TextStyle(color: Colors.white)),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _ShortcutRow(keys: 'Space', action: 'Play / Pause'),
-            _ShortcutRow(keys: 'Left Arrow', action: 'Previous'),
-            _ShortcutRow(keys: 'Right Arrow', action: 'Next'),
-            _ShortcutRow(keys: 'Up Arrow', action: 'Volume Up'),
-            _ShortcutRow(keys: 'Down Arrow', action: 'Volume Down'),
-            _ShortcutRow(keys: 'M', action: 'Mute'),
-            _ShortcutRow(keys: 'F', action: 'Full Player'),
-            _ShortcutRow(keys: 'Esc', action: 'Exit Full'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
-
-    if (event.logicalKey == LogicalKeyboardKey.space) {
-      _togglePlayPause();
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      _playPrevious();
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      _playNext();
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      _setVolume(_volume + 0.1);
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      _setVolume(_volume - 0.1);
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.keyM) {
-      _setVolume(_volume == 0 ? 1.0 : 0.0);
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.keyF) {
-      setState(() => _showFullPlayer = !_showFullPlayer);
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.escape && _showFullPlayer) {
-      setState(() => _showFullPlayer = false);
-      return KeyEventResult.handled;
-    }
-
-    return KeyEventResult.ignored;
   }
 
   @override
@@ -564,225 +389,97 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     _audioPlayer.dispose();
     _searchController.dispose();
     _focusNode.dispose();
-    _headersController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isConnected && !_isLoading) {
-      return _buildSetupScreen();
-    }
-    
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     return Focus(
       focusNode: _focusNode,
-      onKeyEvent: _handleKeyEvent,
       autofocus: true,
       child: Scaffold(
         body: _showFullPlayer
-            ? _buildFullPlayer(isDark)
-            : _buildMainScreen(isDark),
+            ? _buildFullPlayer()
+            : _buildMainScreen(),
       ),
     );
   }
 
-  Widget _buildSetupScreen() {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A1929),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(height: 40),
-              const Icon(Icons.music_note, size: 80, color: Colors.white),
-              const SizedBox(height: 24),
-              const Text(
-                'Sri Keyan',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Connect to YouTube Music',
-                style: TextStyle(fontSize: 16, color: Colors.white70),
-              ),
-              const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'To get authentication headers:\n'
-                  '1. Open YouTube Music in browser\n'
-                  '2. Press F12 → Network tab\n'
-                  '3. Play a song → copy the request headers\n'
-                  '4. Or search for "ytmusicapi headers guide"',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _headersController,
-                maxLines: 6,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-                decoration: InputDecoration(
-                  hintText: 'Paste authentication headers here...',
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.1),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isSettingUp ? null : _setupConnection,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF0A1929),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isSettingUp
-                      ? const CircularProgressIndicator()
-                      : const Text('Connect', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: _checkConnection,
-                child: const Text('Retry Connection', style: TextStyle(color: Colors.white70)),
-              ),
-              const SizedBox(height: 40),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMainScreen(bool isDark) {
+  Widget _buildMainScreen() {
     return SafeArea(
       child: Column(
         children: [
-          _buildHeader(isDark),
-          _buildSearchBar(isDark),
-          _buildPlaylistTabs(isDark),
-          Expanded(child: _buildSongList(isDark)),
-          _buildMiniPlayer(isDark),
+          _buildHeader(),
+          _buildSearchBar(),
+          Expanded(
+            child: _isSearching ? _buildSearchResults() : _buildAlbumGrid(),
+          ),
+          if (_songs.isNotEmpty && _showAlbumView) _buildMiniPlayer(),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(bool isDark) {
+  Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              const Icon(Icons.music_note, color: Colors.white, size: 28),
+              const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Good ${_getGreeting()}',
+                  const Text(
+                    'Sri Keyan',
                     style: TextStyle(
-                      fontSize: 14,
-                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      const Icon(Icons.music_note, color: Colors.white, size: 24),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Sri Keyan',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.info_outline, color: Colors.white),
-                    onPressed: _showAbout,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.keyboard, color: Colors.white),
-                    onPressed: _showShortcuts,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.white),
-                    onPressed: _loadSongs,
+                  Text(
+                    _currentAlbum,
+                    style: const TextStyle(fontSize: 12, color: Colors.white54),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.playlist_play, color: Colors.white, size: 16),
-                const SizedBox(width: 6),
-                Text(
-                  _currentPlaylist,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
+          Row(
+            children: [
+              if (_showAlbumView)
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () {
+                    setState(() {
+                      _showAlbumView = false;
+                      _songs = [];
+                      _audioPlayer.stop();
+                    });
+                  },
                 ),
-              ],
-            ),
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                onPressed: _loadAlbums,
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Morning';
-    if (hour < 17) return 'Afternoon';
-    return 'Evening';
-  }
-
-  Widget _buildSearchBar(bool isDark) {
+  Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Container(
         height: 50,
         decoration: BoxDecoration(
-          color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.grey[100],
+          color: Colors.white.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(25),
         ),
         child: TextField(
@@ -790,12 +487,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
           onChanged: _search,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
-            hintText: 'Search songs...',
-            hintStyle: TextStyle(color: isDark ? Colors.grey[500] : Colors.grey[400]),
-            prefixIcon: Icon(Icons.search, color: isDark ? Colors.grey[500] : Colors.grey[400]),
+            hintText: 'Search Tamil songs...',
+            hintStyle: const TextStyle(color: Colors.grey),
+            prefixIcon: const Icon(Icons.search, color: Colors.grey),
             suffixIcon: _searchController.text.isNotEmpty
                 ? IconButton(
-                    icon: Icon(Icons.clear, color: isDark ? Colors.grey[500] : Colors.grey[400]),
+                    icon: const Icon(Icons.clear, color: Colors.grey),
                     onPressed: () {
                       _searchController.clear();
                       _search('');
@@ -810,144 +507,112 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     );
   }
 
-  Widget _buildPlaylistTabs(bool isDark) {
-    final playlists = [
-      'Tamil Hits',
-      'Top Trending',
-      'Most Played',
-      '2024 Hits',
-      '2023 Hits',
-      'Melody Songs',
-      'Party Songs',
-      'Romance',
-      'Sad Songs',
-      'Devotional',
-      'Hip Hop',
-      '90s Tamil',
-      '2022 Hits',
-    ];
-    
-    return SizedBox(
-      height: 45,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: playlists.length,
-        itemBuilder: (context, index) {
-          final isSelected = _currentPlaylist == playlists[index];
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(playlists[index], style: const TextStyle(fontSize: 12)),
-              selected: isSelected,
-              onSelected: (_) => _changePlaylist(playlists[index]),
-              backgroundColor: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.grey[100],
-              selectedColor: Colors.white.withValues(alpha: 0.2),
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey[400],
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-              side: BorderSide(
-                color: isSelected ? Colors.white : Colors.transparent,
+  Widget _buildAlbumGrid() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.85,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: _albums.length,
+      itemBuilder: (context, index) {
+        final album = _albums[index];
+        return _AlbumCard(
+          album: album,
+          onTap: () => _loadAlbum(album),
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchResults() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_searchAlbums.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Movies',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
-          );
-        },
+            SizedBox(
+              height: 140,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _searchAlbums.length,
+                itemBuilder: (context, index) {
+                  final album = _searchAlbums[index];
+                  return _AlbumCard(
+                    album: Album(
+                      title: album['title'] ?? '',
+                      url: album['url'] ?? '',
+                      image: album['image'] ?? '',
+                      info: '',
+                    ),
+                    onTap: () => _loadAlbum(Album.fromJson(album)),
+                  );
+                },
+              ),
+            ),
+          ],
+          if (_searchResults.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Songs',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _searchResults.length,
+              itemBuilder: (context, index) {
+                return _SongTile(
+                  song: _searchResults[index],
+                  index: index,
+                  onTap: () {
+                    setState(() {
+                      _songs = _searchResults;
+                      _currentIndex = index;
+                      _showAlbumView = true;
+                      _searchController.clear();
+                      _isSearching = false;
+                    });
+                    _playSong(index);
+                  },
+                );
+              },
+            ),
+          ],
+          if (_searchAlbums.isEmpty && _searchResults.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'No results found',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildSongList(bool isDark) {
-    final displaySongs = _isSearching ? _searchResults : _songs;
-    
-    if (_isLoading) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(color: Colors.white),
-            const SizedBox(height: 16),
-            Text(
-              'Loading $_currentPlaylist...',
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ],
-        ),
-      );
-    }
-    
-    if (displaySongs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _isSearching ? Icons.search_off : Icons.music_off,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _isSearching ? 'No songs found' : 'No songs available',
-              style: TextStyle(fontSize: 18, color: Colors.grey[400]),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '${displaySongs.length} Songs',
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-              if (!_isSearching)
-                Text(
-                  _currentPlaylist,
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: displaySongs.length,
-            itemBuilder: (context, idx) {
-              final song = displaySongs[idx];
-              final isSelected = idx == _currentIndex && !_isSearching;
-        
-        return _SongTile(
-          song: song,
-          isSelected: isSelected,
-          isPlaying: isSelected && _isPlaying,
-          index: idx,
-          onTap: () {
-            if (_isSearching) {
-              setState(() {
-                _songs = List.from(_searchResults);
-                _currentIndex = idx;
-                _isSearching = false;
-                _searchController.clear();
-              });
-            }
-            _playSong(_isSearching ? _songs.indexOf(song) : idx);
-            },
-          );
-        },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMiniPlayer(bool isDark) {
+  Widget _buildMiniPlayer() {
     if (_songs.isEmpty) return const SizedBox.shrink();
     
     final song = _songs[_currentIndex];
@@ -974,17 +639,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: primaryColor,
+                    color: secondaryColor,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: _isBuffering
-                        ? const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : song.imageUrl.isNotEmpty
-                            ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
-                                Center(child: Text(song.title[0], style: const TextStyle(fontSize: 24, color: Colors.white))))
-                            : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 24, color: Colors.white))),
+                    child: song.imageUrl.isNotEmpty
+                        ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
+                            Center(child: Text(song.title[0], style: const TextStyle(fontSize: 24, color: Colors.white))))
+                        : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 24, color: Colors.white))),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -992,31 +655,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${_currentIndex + 1}/${_songs.length}',
-                              style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              song.title,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        song.title,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 2),
                       Text(
                         song.artist,
                         style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -1066,7 +710,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
     );
   }
 
-  Widget _buildFullPlayer(bool isDark) {
+  Widget _buildFullPlayer() {
     if (_songs.isEmpty) return const SizedBox.shrink();
     
     final song = _songs[_currentIndex];
@@ -1084,24 +728,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
           children: [
             const Text('Now Playing', style: TextStyle(color: Colors.white, fontSize: 16)),
             Text(
-              '$_currentPlaylist - ${_songs.length} songs',
+              _currentAlbum,
               style: const TextStyle(color: Colors.white54, fontSize: 11),
             ),
           ],
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.info_outline, color: Colors.white),
-            onPressed: _showAbout,
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
         child: Column(
           children: [
-            const SizedBox(height: 16),
+            const SizedBox(height: 32),
             Container(
               width: 280,
               height: 280,
@@ -1118,37 +756,24 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
-                child: _isBuffering
-                    ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                    : song.imageUrl.isNotEmpty
-                        ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
-                            Center(child: Text(song.title[0], style: const TextStyle(fontSize: 100, color: Colors.white))))
-                        : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 100, color: Colors.white))),
+                child: song.imageUrl.isNotEmpty
+                    ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => 
+                        Center(child: Text(song.title[0], style: const TextStyle(fontSize: 100, color: Colors.white))))
+                    : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 100, color: Colors.white))),
               ),
             ),
             const SizedBox(height: 48),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.title,
-                        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${song.artist} - ${song.album}',
-                        style: const TextStyle(fontSize: 16, color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            Text(
+              song.title,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              song.artist,
+              style: const TextStyle(fontSize: 16, color: Colors.white70),
             ),
             const SizedBox(height: 32),
             SliderTheme(
@@ -1178,11 +803,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.shuffle, size: 28),
-                  color: Colors.white70,
-                  onPressed: () {},
-                ),
-                IconButton(
                   icon: const Icon(Icons.skip_previous_rounded, size: 40),
                   color: Colors.white,
                   onPressed: _playPrevious,
@@ -1203,80 +823,72 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> {
                   color: Colors.white,
                   onPressed: _playNext,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.repeat, size: 28),
-                  color: Colors.white70,
-                  onPressed: () {},
-                ),
               ],
             ),
-            const SizedBox(height: 32),
-            _buildVolumeControl(),
             const SizedBox(height: 32),
           ],
         ),
       ),
     );
   }
-
-  Widget _buildVolumeControl() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Icon(
-              _volume == 0 ? Icons.volume_off : Icons.volume_down,
-              color: Colors.white70,
-              size: 20,
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 4,
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  activeTrackColor: Colors.white,
-                  inactiveTrackColor: Colors.white24,
-                  thumbColor: Colors.white,
-                ),
-                child: Slider(
-                  value: _volume,
-                  min: 0,
-                  max: 1,
-                  onChanged: _setVolume,
-                ),
-              ),
-            ),
-            Icon(Icons.volume_up, color: Colors.white70, size: 20),
-          ],
-        ),
-      ],
-    );
-  }
 }
 
-class _ShortcutRow extends StatelessWidget {
-  final String keys;
-  final String action;
+class _AlbumCard extends StatelessWidget {
+  final Album album;
+  final VoidCallback onTap;
 
-  const _ShortcutRow({required this.keys, required this.action});
+  const _AlbumCard({required this.album, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(4),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                child: album.image.isNotEmpty
+                    ? Image.network(
+                        album.image,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: const Color(0xFF1A365D),
+                          child: const Center(
+                            child: Icon(Icons.music_note, size: 40, color: Colors.white54),
+                          ),
+                        ),
+                      )
+                    : Container(
+                        color: const Color(0xFF1A365D),
+                        child: const Center(
+                          child: Icon(Icons.music_note, size: 40, color: Colors.white54),
+                        ),
+                      ),
+              ),
             ),
-            child: Text(keys, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(width: 12),
-          Text(action, style: const TextStyle(color: Colors.white70)),
-        ],
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                album.title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1284,218 +896,121 @@ class _ShortcutRow extends StatelessWidget {
 
 class _SongTile extends StatelessWidget {
   final Song song;
-  final bool isSelected;
-  final bool isPlaying;
-  final int? index;
+  final int index;
   final VoidCallback onTap;
 
   const _SongTile({
     required this.song,
-    required this.isSelected,
-    required this.isPlaying,
-    this.index,
+    required this.index,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: isSelected ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+        color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: Stack(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A365D),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: song.imageUrl.isNotEmpty
-                    ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) =>
-                        Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))))
-                    : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))),
-              ),
-            ),
-            if (index != null && !isSelected && !isPlaying)
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    '${index! + 1}',
-                    style: const TextStyle(fontSize: 10, color: Colors.white70),
-                  ),
-                ),
-              ),
-          ],
+        leading: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A365D),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: song.imageUrl.isNotEmpty
+                ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) =>
+                    Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))))
+                : Center(child: Text(song.title[0], style: const TextStyle(fontSize: 20, color: Colors.white))),
+          ),
         ),
         title: Text(
           song.title,
-          style: TextStyle(
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected ? Colors.white : Colors.grey[300],
-          ),
-        ),
-        subtitle: Text(
-          '${song.artist} - ${song.album}',
-          style: TextStyle(color: Colors.grey[500]),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: isSelected
-            ? const Icon(Icons.equalizer, color: Colors.white)
-            : const Icon(Icons.more_vert, color: Colors.grey),
+        subtitle: Text(
+          song.artist,
+          style: const TextStyle(color: Colors.grey),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Text(
+          song.duration,
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
         onTap: onTap,
       ),
     );
   }
 }
 
-class MusicApiService {
+class MassTamilApi {
   static String get _baseUrl {
     if (kIsWeb) {
       return 'https://sri-keyan-music-player.onrender.com';
     }
     return 'http://localhost:5000';
   }
-  
-  static bool isConnected = false;
 
-  static Future<bool> checkConnection() async {
+  static Future<List<Album>> getLatest() async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/check')).timeout(const Duration(seconds: 5));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/latest'),
+      ).timeout(const Duration(seconds: 15));
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        isConnected = data['status'] == 'connected';
-      }
-    } catch (_) {}
-    return isConnected;
-  }
-
-  static Future<List<Song>> getHomeSongs() async {
-    try {
-      final response = await http.get(Uri.parse('$_baseUrl/home')).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> songs = data['songs'] ?? [];
-        return songs.map((item) => Song(
-          id: item['id'] ?? '',
-          title: item['title'] ?? 'Unknown',
-          artist: item['artist'] ?? 'Unknown Artist',
-          album: item['album'] ?? 'Unknown Album',
-          imageUrl: item['image'] ?? '',
-          audioUrl: '',
-          duration: item['duration'] ?? '0:00',
-        )).toList();
+        final List<dynamic> albums = data['albums'] ?? [];
+        return albums.map((item) => Album.fromJson(item)).toList();
       }
     } catch (_) {}
     return [];
   }
 
-  static Future<List<Song>> searchSongs(String query) async {
+  static Future<List<Song>> getAlbumSongs(String url) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/album?url=${Uri.encodeComponent(url)}'),
+      ).timeout(const Duration(seconds: 15));
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> songs = data['songs'] ?? [];
+        return songs.map((item) => Song.fromJson(item)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static Future<Map<String, dynamic>> search(String query) async {
     try {
       final response = await http.get(
         Uri.parse('$_baseUrl/search?q=${Uri.encodeComponent(query)}'),
       ).timeout(const Duration(seconds: 15));
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final List<dynamic> results = data['results'] ?? [];
-        return results.map((item) => Song(
-          id: item['id'] ?? '',
-          title: item['title'] ?? 'Unknown',
-          artist: item['artist'] ?? 'Unknown Artist',
-          album: item['album'] ?? 'Unknown Album',
-          imageUrl: item['image'] ?? '',
-          audioUrl: '',
-          duration: item['duration'] ?? '0:00',
-        )).toList();
+        final results = data['results'] ?? [];
+        
+        List<Song> songs = [];
+        List<dynamic> albums = [];
+        
+        for (var item in results) {
+          if (item['type'] == 'movie') {
+            albums.add(item);
+          }
+        }
+        
+        return {'songs': songs, 'albums': albums};
       }
     } catch (_) {}
-    return [];
-  }
-
-  static Future<String?> getStreamUrl(String videoId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/stream/$videoId'),
-      ).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['url'];
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  static Future<String?> getLyrics(String videoId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/lyrics?id=$videoId'),
-      ).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['lyrics'];
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  static Future<List<Map<String, dynamic>>> getPlaylists() async {
-    try {
-      final response = await http.get(Uri.parse('$_baseUrl/playlist')).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return List<Map<String, dynamic>>.from(data['playlists'] ?? []);
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  static Future<List<Song>> getPlaylistTracks(String playlistId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/playlist_tracks?id=$playlistId'),
-      ).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List<dynamic> tracks = data['tracks'] ?? [];
-        return tracks.map((item) => Song(
-          id: item['id'] ?? '',
-          title: item['title'] ?? 'Unknown',
-          artist: item['artist'] ?? 'Unknown Artist',
-          album: item['album'] ?? 'Unknown Album',
-          imageUrl: item['image'] ?? '',
-          audioUrl: '',
-          duration: item['duration'] ?? '0:00',
-        )).toList();
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  static Future<bool> setup(String headers) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/setup'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'headers': headers}),
-      ).timeout(const Duration(seconds: 10));
-      return response.statusCode == 200;
-    } catch (_) {}
-    return false;
+    return {'songs': [], 'albums': []};
   }
 }
-
