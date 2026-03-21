@@ -34,7 +34,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   just_audio: ^0.9.40
   http: ^1.2.0
-  youtube_player_flutter: ^9.0.3
+  url_launcher: ^6.2.4
 
 dev_dependencies:
   flutter_test:

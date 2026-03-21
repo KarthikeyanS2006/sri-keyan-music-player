@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 void main() {
   runApp(const MusicApp());
@@ -280,7 +280,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with SingleTicker
   Duration _position = Duration.zero;
   bool _showFullPlayer = false;
   String _currentCategory = 'Trending';
-  YoutubePlayerController? _youtubeController;
   String _currentLyrics = '';
   List<String> _lyricLines = [];
   int _currentLyricIndex = -1;
@@ -431,7 +430,6 @@ Thank you for listening!''';
     
     final song = _songs[index];
     _fetchLyrics(song.id, song.title);
-    _initYoutubePlayer(song);
     
     if (song.audioUrl.isNotEmpty) {
       try {
@@ -450,36 +448,18 @@ Thank you for listening!''';
     }
   }
 
-  void _initYoutubePlayer(Song song) {
-    _youtubeController?.dispose();
-    _youtubeController = null;
-    
-    if (song.isMovieSong) {
-      final trailerUrl = _searchYoutubeTrailer(song.movieName);
-      if (trailerUrl != null) {
-        final videoId = YoutubePlayer.convertUrlToId(trailerUrl);
-        if (videoId != null) {
-          _youtubeController = YoutubePlayerController(
-            initialVideoId: videoId,
-            flags: const YoutubePlayerFlags(
-              autoPlay: false,
-              mute: true,
-              hideControls: true,
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  String? _searchYoutubeTrailer(String movieName) {
-    final movie = movieName.toLowerCase()
+  Future<void> _openYoutubeTrailer(String movieName) async {
+    final movie = movieName
+        .replaceAll("From '", "")
         .replaceAll("from '", "")
         .replaceAll("'", "")
         .replaceAll("(", "")
         .replaceAll(")", "")
+        .replaceAll("From ", "")
         .trim();
-    return 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    
+    final searchQuery = Uri.encodeComponent('$movie tamil movie trailer');
+    // This will be handled by the button tap
   }
 
   Future<void> _togglePlayPause() async {
@@ -562,7 +542,6 @@ Thank you for listening!''';
     _searchController.dispose();
     _focusNode.dispose();
     _tabController.dispose();
-    _youtubeController?.dispose();
     _lyricsScrollController.dispose();
     super.dispose();
   }
@@ -939,7 +918,7 @@ Thank you for listening!''';
                 child: Column(
                   children: [
                     const SizedBox(height: 20),
-                    if (song.isMovieSong && _youtubeController != null)
+                    if (song.isMovieSong)
                       _buildTrailerSection(song),
                     _buildAlbumArt(song),
                     _buildSongInfo(song),
@@ -1008,7 +987,7 @@ Thank you for listening!''';
         children: [
           Row(
             children: [
-              Icon(Icons.movie, color: primaryOrange, size: 20),
+              const Icon(Icons.movie, color: primaryOrange, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Movie Trailer',
@@ -1022,29 +1001,43 @@ Thank you for listening!''';
             ],
           ),
           const SizedBox(height: 10),
-          Container(
-            height: 180,
-            decoration: BoxDecoration(
-              color: textDark,
-              borderRadius: BorderRadius.circular(15),
+          GestureDetector(
+            onTap: () async {
+              final movie = song.movieName
+                  .replaceAll("From '", "")
+                  .replaceAll("from '", "")
+                  .replaceAll("'", "")
+                  .replaceAll("(", "")
+                  .replaceAll(")", "")
+                  .replaceAll("From ", "")
+                  .trim();
+              final searchQuery = Uri.encodeComponent('$movie tamil movie trailer');
+              final url = Uri.parse('https://www.youtube.com/results?search_query=$searchQuery');
+              if (await canLaunchUrl(url)) {
+                await launchUrl(url, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: Container(
+              height: 120,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFF0000), Color(0xFFFF4444)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.play_circle_outline, color: white, size: 50),
+                    SizedBox(height: 8),
+                    Text('Tap to watch trailer on YouTube', style: TextStyle(color: white)),
+                  ],
+                ),
+              ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: _youtubeController != null
-                ? YoutubePlayer(
-                    controller: _youtubeController!,
-                    showVideoProgressIndicator: true,
-                    progressIndicatorColor: primaryOrange,
-                  )
-                : Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.play_circle_outline, color: white, size: 50),
-                        const SizedBox(height: 8),
-                        Text('Trailer not available', style: TextStyle(color: white)),
-                      ],
-                    ),
-                  ),
           ),
           const SizedBox(height: 20),
         ],
