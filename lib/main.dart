@@ -287,6 +287,7 @@ class Song {
   final String album;
   final String imageUrl;
   final String audioUrl;
+  final String previewUrl;
   final String duration;
   final String url;
   final String year;
@@ -298,19 +299,25 @@ class Song {
     required this.album,
     required this.imageUrl,
     required this.audioUrl,
+    this.previewUrl = '',
     required this.duration,
     this.url = '',
     this.year = '',
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
+    // Use preview URL if available (no DRM)
+    final preview = json['media_preview_url'] ?? '';
+    final mediaUrl = json['media_url'] ?? '';
+    
     return Song(
       id: json['id'] ?? json['e_songid'] ?? '',
       title: json['song'] ?? json['title'] ?? 'Unknown',
       artist: json['primary_artists'] ?? json['singers'] ?? 'Unknown Artist',
       album: json['album'] ?? '',
       imageUrl: json['image'] ?? '',
-      audioUrl: json['media_url'] ?? '',
+      audioUrl: preview.isNotEmpty ? preview : mediaUrl,
+      previewUrl: preview,
       duration: json['duration'] ?? '0',
       url: json['perma_url'] ?? json['url'] ?? '',
       year: json['year'] ?? '',
@@ -1586,7 +1593,18 @@ class JioSaavnApi {
   static const String _proxyUrl = 'https://sri-keyan-music-player.onrender.com/proxy';
 
   static String getProxyUrl(String audioUrl) {
+    // Use preview URL which doesn't have DRM
+    if (audioUrl.contains('preview.saavncdn.com')) {
+      return audioUrl;
+    }
     return '$_proxyUrl?url=${Uri.encodeComponent(audioUrl)}';
+  }
+
+  static String getPreviewUrl(String? previewUrl) {
+    if (previewUrl != null && previewUrl.isNotEmpty) {
+      return previewUrl;
+    }
+    return '';
   }
 
   static Future<List<Song>> getHome() async {
