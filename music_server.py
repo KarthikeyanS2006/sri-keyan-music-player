@@ -10,12 +10,8 @@ import os
 import re
 import urllib.parse
 import requests
-
-try:
-    from bs4 import BeautifulSoup
-    BS4_AVAILABLE = True
-except ImportError:
-    BS4_AVAILABLE = False
+from bs4 import BeautifulSoup
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -23,11 +19,22 @@ CORS(app)
 BASE_URL = "https://www.masstamilan.dev"
 CDN_URL = "https://masstamilan.download"
 
+# Create a session for better Cloudflare handling
+session = requests.Session()
+
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Referer': 'https://www.masstamilan.dev/',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Cache-Control': 'max-age=0',
 }
 
 @app.route('/')
@@ -43,11 +50,37 @@ def home():
         }
     })
 
+def make_request(url, max_retries=3):
+    """Make request with retries for Cloudflare"""
+    for attempt in range(max_retries):
+        try:
+            # First visit homepage to get cookies
+            if attempt == 0:
+                session.get(BASE_URL, headers=HEADERS, timeout=10)
+                time.sleep(1)
+            
+            response = session.get(url, headers=HEADERS, timeout=30)
+            
+            # Check if blocked
+            if 'Just a moment' in response.text or 'cf-challenge' in response.text:
+                time.sleep(2)
+                continue
+                
+            return response
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            time.sleep(1)
+    return None
+
 @app.route('/latest')
 def latest():
     """Get latest Tamil movie albums"""
     try:
-        response = requests.get(BASE_URL, headers=HEADERS, timeout=30)
+        response = make_request(BASE_URL)
+        if not response:
+            return jsonify({'error': 'Failed to fetch - site may be blocking', 'albums': []}), 500
+            
         soup = BeautifulSoup(response.text, 'html.parser')
         
         albums = []
@@ -88,7 +121,10 @@ def album():
         url = f"{BASE_URL}{url}"
     
     try:
-        response = requests.get(url, headers=HEADERS, timeout=30)
+        response = make_request(url)
+        if not response:
+            return jsonify({'error': 'Failed to fetch - site may be blocking', 'songs': []}), 500
+            
         soup = BeautifulSoup(response.text, 'html.parser')
         
         songs = []
@@ -243,7 +279,9 @@ def search():
     
     try:
         search_url = f"{BASE_URL}/search?keyword={urllib.parse.quote(query)}"
-        response = requests.get(search_url, headers=HEADERS, timeout=30)
+        response = make_request(search_url)
+        if not response:
+            return jsonify({'error': 'Failed to fetch - site may be blocking', 'results': []}), 500
         soup = BeautifulSoup(response.text, 'html.parser')
         
         results = []
@@ -273,7 +311,9 @@ def trending():
     """Get trending albums"""
     try:
         search_url = f"{BASE_URL}/tamil-songs"
-        response = requests.get(search_url, headers=HEADERS, timeout=30)
+        response = make_request(search_url)
+        if not response:
+            return jsonify({'error': 'Failed to fetch - site may be blocking', 'albums': []}), 500
         soup = BeautifulSoup(response.text, 'html.parser')
         
         albums = []
