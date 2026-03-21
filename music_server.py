@@ -9,6 +9,7 @@ from flask_cors import CORS
 from ytmusicapi import YTMusic
 import json
 import os
+import urllib.parse
 
 app = Flask(__name__)
 CORS(app)
@@ -318,6 +319,164 @@ def audio_proxy(video_id):
         return 'No audio', 404
     except Exception as e:
         return f'Error: {e}', 500
+
+@app.route('/masstamilan', methods=['GET'])
+def masstamilan():
+    """Scrape songs from masstamilan.dev"""
+    url = request.args.get('url', '')
+    
+    if not url:
+        return jsonify({'error': 'URL parameter required'}), 400
+    
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        bs4_available = True
+    except ImportError:
+        bs4_available = False
+    
+    if not bs4_available:
+        return jsonify({'error': 'BeautifulSoup not installed', 'songs': []}), 500
+    
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://www.masstamilan.dev/',
+        }
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        songs = []
+        album_name = ''
+        
+        h1 = soup.find('h1')
+        if h1:
+            album_name = h1.text.strip().replace('Tamil mp3 songs download MassTamilan.com', '').strip()
+        
+        table = soup.find('table', {'id': 'tl'})
+        if table:
+            rows = table.find_all('tr')
+            for i, row in enumerate(rows[1:], 1):
+                cells = row.find_all('td')
+                if len(cells) >= 1:
+                    name_elem = row.find('span', itemprop='name')
+                    song_name = name_elem.text.strip() if name_elem else ''
+                    
+                    artist_elem = row.find('span', itemprop='byArtist')
+                    artists = artist_elem.text.strip() if artist_elem else ''
+                    
+                    duration_elem = row.find('span', itemprop='duration')
+                    duration = duration_elem.text.strip() if duration_elem else ''
+                    
+                    img_elem = soup.find('meta', property='og:image')
+                    image = img_elem['content'] if img_elem else ''
+                    
+                    dl_link = row.find('a', href=lambda x: x and '/downloader/' in x)
+                    dl_path = dl_link['href'] if dl_link else ''
+                    
+                    if song_name:
+                        songs.append({
+                            'id': str(i),
+                            'title': song_name,
+                            'artist': artists,
+                            'album': album_name,
+                            'image': image,
+                            'duration': duration,
+                            'dl_path': dl_path,
+                        })
+        
+        return jsonify({'songs': songs, 'album': album_name})
+    
+    except Exception as e:
+        return jsonify({'error': str(e), 'songs': []}), 500
+
+@app.route('/masstamilan/play', methods=['GET'])
+def masstamilan_play():
+    """Get direct audio URL from masstamilan"""
+    dl_path = request.args.get('path', '')
+    title = request.args.get('title', '')
+    album = request.args.get('album', '')
+    
+    if not dl_path:
+        return jsonify({'error': 'path parameter required'}), 400
+    
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Referer': 'https://www.masstamilan.dev/',
+        }
+        
+        full_url = f'https://www.masstamilan.dev{dl_path}'
+        response = requests.get(full_url, headers=headers, timeout=30)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Find audio source
+        audio = soup.find('audio', {'id': 'album-audio'})
+        if audio and audio.get('src'):
+            return jsonify({
+                'url': audio['src'],
+                'title': title,
+            })
+        
+        # Try to find download link
+        download_link = soup.find('a', href=lambda x: x and 'masstamilan.download' in x)
+        if download_link:
+            return jsonify({
+                'url': download_link['href'],
+                'title': title,
+            })
+        
+        return jsonify({'error': 'Audio not found'}), 404
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/masstamilan/search', methods=['GET'])
+def masstamilan_search():
+    """Search songs on masstamilan.dev"""
+    query = request.args.get('q', '')
+    
+    if not query:
+        return jsonify({'results': []})
+    
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Referer': 'https://www.masstamilan.dev/',
+        }
+        
+        search_url = f'https://www.masstamilan.dev/search?keyword={urllib.parse.quote(query)}'
+        response = requests.get(search_url, headers=headers, timeout=30)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        results = []
+        
+        # Find all song links
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if '/mp3-song' in href or '-songs' in href:
+                title = link.text.strip()
+                if title and len(title) > 3:
+                    results.append({
+                        'title': title,
+                        'url': f'https://www.masstamilan.dev{href}',
+                    })
+        
+        return jsonify({'results': results[:20]})
+    
+    except Exception as e:
+        return jsonify({'error': str(e), 'results': []}), 500
 
 if __name__ == '__main__':
     setup_ytmusic()
