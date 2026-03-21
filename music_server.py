@@ -1,6 +1,6 @@
 """
-MassTamil Music API Server
-A simple API to scrape and stream Tamil songs from masstamilan.dev
+JioSaavn Music API Server
+A simple API to fetch Tamil/Hindi songs from JioSaavn
 """
 
 from flask import Flask, request, jsonify, Response
@@ -8,219 +8,261 @@ from flask_cors import CORS
 import json
 import os
 import re
-import urllib.parse
 import requests
-from bs4 import BeautifulSoup
-import time
+from urllib.parse import quote
 
 app = Flask(__name__)
 CORS(app)
 
-BASE_URL = "https://www.masstamilan.dev"
-CDN_URL = "https://masstamilan.download"
-
-# Create a session for better Cloudflare handling
-session = requests.Session()
+BASE_URL = "https://www.jiosaavn.com"
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Cache-Control': 'max-age=0',
+    'Referer': 'https://www.jiosaavn.com/',
+    'Origin': 'https://www.jiosaavn.com',
 }
+
+session = requests.Session()
+session.headers.update(HEADERS)
 
 @app.route('/')
 def home():
     return jsonify({
         'status': 'ok',
-        'message': 'MassTamil Music API',
+        'message': 'JioSaavn Music API',
         'endpoints': {
-            '/latest': 'Get latest Tamil movies',
-            '/album?url=URL': 'Get songs from album page',
-            '/search?q=QUERY': 'Search for songs/movies',
-            '/play?path=PATH': 'Get audio URL from download path'
+            '/search?q=QUERY': 'Search for songs',
+            '/album?url=URL': 'Get album songs from URL',
+            '/trending': 'Get trending Tamil songs',
+            '/home': 'Get home/category songs',
+            '/play?id=ID': 'Get song details by ID'
         }
     })
 
-def make_request(url, max_retries=3):
-    """Make request with retries for Cloudflare"""
-    for attempt in range(max_retries):
-        try:
-            # First visit homepage to get cookies
-            if attempt == 0:
-                session.get(BASE_URL, headers=HEADERS, timeout=10)
-                time.sleep(1)
-            
-            response = session.get(url, headers=HEADERS, timeout=30)
-            
-            # Check if blocked
-            if 'Just a moment' in response.text or 'cf-challenge' in response.text:
-                time.sleep(2)
-                continue
-                
-            return response
-        except Exception as e:
-            if attempt == max_retries - 1:
-                raise e
-            time.sleep(1)
-    return None
-
-@app.route('/latest')
-def latest():
-    """Get latest Tamil movie albums"""
+@app.route('/search')
+def search():
+    """Search for songs"""
+    query = request.args.get('q', '')
+    
+    if not query:
+        return jsonify({'results': []})
+    
     try:
-        response = make_request(BASE_URL)
-        if not response:
-            return jsonify({'error': 'Failed to fetch - site may be blocking', 'albums': []}), 500
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
+        # JioSaavn API endpoint
+        api_url = f"https://www.jiosaavn.com/api.php?__call=search.getResultsByQuery&query={quote(query)}&p=1&n=20&_marker=0"
         
-        albums = []
+        response = session.get(api_url, timeout=30)
+        data = response.json()
         
-        # Find album grid items
-        album_items = soup.find_all('div', class_='a-i')
+        results = []
         
-        for item in album_items[:20]:
-            link = item.find('a')
-            if link:
-                href = link.get('href', '')
-                img = item.find('img')
-                title_elem = item.find('h2')
-                
-                if href and title_elem:
-                    albums.append({
-                        'title': title_elem.text.strip(),
-                        'url': f"{BASE_URL}{href}",
-                        'image': f"{BASE_URL}{img.get('src', '')}" if img else '',
-                        'info': item.find('p').text.strip() if item.find('p') else ''
+        # Parse the response - JioSaavn returns nested JSON strings
+        if isinstance(data, dict) and 'results' in data:
+            for item in data['results'][:20]:
+                try:
+                    results.append({
+                        'id': item.get('id', ''),
+                        'title': item.get('title', ''),
+                        'artist': item.get('singers', item.get('artist', '')),
+                        'album': item.get('album', ''),
+                        'album_url': item.get('album_url', ''),
+                        'image': item.get('image', '').replace('150x150', '500x500'),
+                        'duration': item.get('duration', ''),
+                        'url': item.get('url', ''),
+                        'perma_url': item.get('perma_url', ''),
+                        'year': item.get('year', ''),
+                        'language': item.get('language', ''),
                     })
+                except:
+                    continue
+        elif isinstance(data, list):
+            for item in data[:20]:
+                try:
+                    results.append({
+                        'id': item.get('id', ''),
+                        'title': item.get('title', ''),
+                        'artist': item.get('singers', item.get('artist', '')),
+                        'album': item.get('album', ''),
+                        'album_url': item.get('album_url', ''),
+                        'image': item.get('image', '').replace('150x150', '500x500'),
+                        'duration': item.get('duration', ''),
+                        'url': item.get('url', ''),
+                        'perma_url': item.get('perma_url', ''),
+                        'year': item.get('year', ''),
+                        'language': item.get('language', ''),
+                    })
+                except:
+                    continue
         
-        return jsonify({'albums': albums})
+        return jsonify({'results': results})
     
     except Exception as e:
-        return jsonify({'error': str(e), 'albums': []}), 500
+        return jsonify({'error': str(e), 'results': []}), 500
+
+@app.route('/home')
+@app.route('/trending')
+def home_trending():
+    """Get trending/home songs"""
+    try:
+        # Fetch from JioSaavn featured/trending
+        api_url = "https://www.jiosaavn.com/api.php?__call=content.getHomeData&marker=0&platform=web&_marker=0"
+        
+        response = session.get(api_url, timeout=30)
+        data = response.json()
+        
+        songs = []
+        
+        # Parse different sections
+        if isinstance(data, dict):
+            # Try to get topcharts or featured content
+            for section in ['topcharts', 'new_trending', 'featured_playlists_details', 'modules']:
+                if section in data:
+                    section_data = data[section]
+                    if isinstance(section_data, dict) and 'lists' in section_data:
+                        for playlist in section_data['lists'][:3]:
+                            if 'list' in playlist:
+                                for item in playlist['list'][:10]:
+                                    try:
+                                        songs.append({
+                                            'id': item.get('id', ''),
+                                            'title': item.get('title', ''),
+                                            'artist': item.get('subtitle', item.get('singers', '')),
+                                            'album': item.get('album', ''),
+                                            'image': item.get('image', '').replace('150x150', '500x500'),
+                                            'duration': item.get('duration', ''),
+                                            'url': item.get('url', ''),
+                                            'perma_url': item.get('perma_url', ''),
+                                        })
+                                    except:
+                                        continue
+                    elif isinstance(section_data, list):
+                        for item in section_data[:10]:
+                            try:
+                                songs.append({
+                                    'id': item.get('id', ''),
+                                    'title': item.get('title', ''),
+                                    'artist': item.get('subtitle', item.get('singers', '')),
+                                    'album': item.get('album', ''),
+                                    'image': item.get('image', '').replace('150x150', '500x500'),
+                                    'duration': item.get('duration', ''),
+                                    'url': item.get('url', ''),
+                                    'perma_url': item.get('perma_url', ''),
+                                })
+                            except:
+                                continue
+        
+        # If still empty, return default Tamil songs
+        if not songs:
+            # Fallback to search for Tamil songs
+            return search_tamil_songs()
+        
+        return jsonify({'songs': songs})
+    
+    except Exception as e:
+        return search_tamil_songs()
+
+def search_tamil_songs():
+    """Fallback: Search for Tamil songs"""
+    try:
+        api_url = "https://www.jiosaavn.com/api.php?__call=search.getResultsByQuery&query=tamil+songs&p=1&n=20&_marker=0"
+        
+        response = session.get(api_url, timeout=30)
+        data = response.json()
+        
+        songs = []
+        
+        if isinstance(data, dict) and 'results' in data:
+            for item in data['results'][:20]:
+                try:
+                    songs.append({
+                        'id': item.get('id', ''),
+                        'title': item.get('title', ''),
+                        'artist': item.get('singers', item.get('artist', '')),
+                        'album': item.get('album', ''),
+                        'image': item.get('image', '').replace('150x150', '500x500'),
+                        'duration': item.get('duration', ''),
+                        'url': item.get('url', ''),
+                        'perma_url': item.get('perma_url', ''),
+                        'year': item.get('year', ''),
+                    })
+                except:
+                    continue
+        elif isinstance(data, list):
+            for item in data[:20]:
+                try:
+                    songs.append({
+                        'id': item.get('id', ''),
+                        'title': item.get('title', ''),
+                        'artist': item.get('singers', item.get('artist', '')),
+                        'album': item.get('album', ''),
+                        'image': item.get('image', '').replace('150x150', '500x500'),
+                        'duration': item.get('duration', ''),
+                        'url': item.get('url', ''),
+                        'perma_url': item.get('perma_url', ''),
+                        'year': item.get('year', ''),
+                    })
+                except:
+                    continue
+        
+        return jsonify({'songs': songs})
+    
+    except Exception as e:
+        return jsonify({'error': str(e), 'songs': []}), 500
 
 @app.route('/album')
 def album():
-    """Get songs from an album/movie page"""
+    """Get album songs from URL or ID"""
     url = request.args.get('url', '')
+    album_id = request.args.get('id', '')
     
-    if not url:
-        return jsonify({'error': 'URL parameter required'}), 400
-    
-    # Add base URL if not present
-    if not url.startswith('http'):
-        url = f"{BASE_URL}{url}"
+    if not url and not album_id:
+        return jsonify({'error': 'url or id parameter required', 'songs': []}), 400
     
     try:
-        response = make_request(url)
-        if not response:
-            return jsonify({'error': 'Failed to fetch - site may be blocking', 'songs': []}), 500
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
+        if album_id:
+            api_url = f"https://www.jiosaavn.com/api.php?__call=content.getAlbumDetails&albumid={album_id}&marker=0&_marker=0"
+        else:
+            # Extract album ID from URL
+            # URL format: https://www.jiosaavn.com/album/album-name/ID
+            parts = url.split('/')
+            album_id = parts[-1] if parts else ''
+            api_url = f"https://www.jiosaavn.com/api.php?__call=content.getAlbumDetails&albumid={album_id}&marker=0&_marker=0"
+        
+        response = session.get(api_url, timeout=30)
+        data = response.json()
         
         songs = []
         album_name = ''
         album_image = ''
-        movie_info = {}
         
-        # Get album name from h1
-        h1 = soup.find('h1')
-        if h1:
-            album_name = h1.text.strip().replace('Tamil mp3 songs download MassTamilan.com', '').strip()
-        
-        # Get album image
-        img = soup.find('meta', property='og:image')
-        if img:
-            album_image = img.get('content', '')
-        
-        # Get movie info from fieldset
-        fieldset = soup.find('fieldset')
-        if fieldset:
-            for b in fieldset.find_all('b'):
-                label = b.text.strip().replace(':', '')
-                value = b.next_sibling
-                if value:
-                    # Clean up the value - get text from <a> tags
-                    val_text = ''
-                    for sibling in fieldset.find_all('b'):
-                        if sibling.text.strip().replace(':', '') == label:
-                            val_text = sibling.next_sibling
-                            if val_text:
-                                val_text = val_text.strip()
-                                # Get all text including links
-                                next_elem = sibling
-                                while True:
-                                    next_elem = next_elem.next_sibling
-                                    if next_elem is None or isinstance(next_elem, type(b)):
-                                        break
-                                    if hasattr(next_elem, 'text'):
-                                        val_text += ' ' + str(next_elem.text).strip()
-                                val_text = val_text.strip().strip(',').strip()
-                                if val_text:
-                                    movie_info[label] = val_text
-                                break
-        
-        # Find all tracks in table
-        table = soup.find('table', {'id': 'tl'})
-        if table:
-            rows = table.find_all('tr')
-            for i, row in enumerate(rows[1:], 1):  # Skip header
-                # Get song name
-                name_elem = row.find('span', itemprop='name')
-                song_name = name_elem.text.strip() if name_elem else ''
-                
-                # Get artists
-                artist_elem = row.find('span', itemprop='byArtist')
-                artists = artist_elem.text.strip() if artist_elem else ''
-                
-                # Get duration
-                duration_elem = row.find('span', itemprop='duration')
-                duration = duration_elem.text.strip() if duration_elem else ''
-                
-                # Get download path
-                dl_link = row.find('a', href=lambda x: x and '/downloader/' in x and '/p128_cdn/' in x)
-                dl_path = dl_link['href'] if dl_link else ''
-                
-                if song_name and dl_path:
-                    # Generate audio URL
-                    # Pattern: /t/YEAR/AlbumName/quality/SongName.mp3
-                    path_parts = dl_path.split('/')
-                    if len(path_parts) >= 6:
-                        year = path_parts[-5] if len(path_parts) > 5 else '2026'
-                        album_slug = path_parts[-4]
-                        quality = path_parts[-3]
-                        song_name_encoded = path_parts[-1].replace('.mp3', '').replace('%20', ' ')
-                        # Try to construct direct URL
-                        # Format: https://masstamilan.download/t/2026/Kaalidas-2/128/Minmini Penne.mp3
-                        audio_url = f"{CDN_URL}/t/{year}/{album_slug}/{quality}/{song_name_encoded}.mp3"
-                    else:
-                        audio_url = f"{CDN_URL}{dl_path}"
-                    
-                    songs.append({
-                        'id': str(i),
-                        'title': song_name,
-                        'artist': artists,
-                        'album': album_name,
-                        'image': album_image,
-                        'duration': duration,
-                        'url': audio_url,
-                        'dl_path': dl_path,
-                    })
+        if isinstance(data, dict):
+            album_name = data.get('title', data.get('album_title', ''))
+            album_image = data.get('image', '').replace('150x150', '500x500')
+            
+            # Songs are in 'songs' key
+            if 'songs' in data:
+                for item in data['songs']:
+                    try:
+                        songs.append({
+                            'id': item.get('id', ''),
+                            'title': item.get('title', ''),
+                            'artist': item.get('singers', item.get('primary_artists', '')),
+                            'album': album_name,
+                            'image': item.get('image', album_image).replace('150x150', '500x500'),
+                            'duration': item.get('duration', ''),
+                            'url': item.get('url', ''),
+                            'perma_url': item.get('perma_url', ''),
+                            'year': item.get('year', ''),
+                        })
+                    except:
+                        continue
         
         return jsonify({
             'songs': songs,
             'album': album_name,
-            'image': album_image,
-            'info': movie_info
+            'image': album_image
         })
     
     except Exception as e:
@@ -228,119 +270,90 @@ def album():
 
 @app.route('/play')
 def play():
-    """Get direct audio URL from download path"""
-    path = request.args.get('path', '')
-    title = request.args.get('title', '')
+    """Get song details including download URL"""
+    song_id = request.args.get('id', '')
+    url = request.args.get('url', '')
     
-    if not path:
-        return jsonify({'error': 'path parameter required'}), 400
-    
-    # Add base URL if not present
-    if not path.startswith('http'):
-        path = f"{BASE_URL}{path}"
+    if not song_id and not url:
+        return jsonify({'error': 'id or url parameter required'}), 400
     
     try:
-        response = requests.get(path, headers=HEADERS, timeout=30)
-        soup = BeautifulSoup(response.text, 'html.parser')
+        if song_id:
+            api_url = f"https://www.jiosaavn.com/api.php?__call=song.getDetails&pids={song_id}&marker=0&_marker=0"
+        else:
+            # Extract ID from URL
+            # URL format: https://www.jiosaavn.com/song/song-name/ID
+            parts = url.split('/')
+            song_id = parts[-1] if parts else ''
+            api_url = f"https://www.jiosaavn.com/api.php?__call=song.getDetails&pids={song_id}&marker=0&_marker=0"
         
-        # Try to find direct audio URL
-        # Method 1: Check for download link
-        download_link = soup.find('a', href=lambda x: x and 'masstamilan.download' in x)
-        if download_link:
-            audio_url = download_link['href']
+        response = session.get(api_url, timeout=30)
+        data = response.json()
+        
+        if isinstance(data, dict) and song_id in data:
+            item = data[song_id]
             return jsonify({
-                'url': audio_url,
-                'title': title,
+                'id': item.get('id', ''),
+                'title': item.get('song', item.get('title', '')),
+                'artist': item.get('singers', item.get('artist', '')),
+                'album': item.get('album_name', item.get('album', '')),
+                'image': item.get('image', '').replace('150x150', '500x500'),
+                'duration': item.get('duration', ''),
+                'url': item.get('media_url', item.get('url', '')),
+                'download_url': item.get('media_preview_url', item.get('media_url', '')),
+                'perma_url': item.get('perma_url', ''),
+                'lyrics': item.get('lyrics', ''),
+            })
+        elif isinstance(data, list) and len(data) > 0:
+            item = data[0]
+            return jsonify({
+                'id': item.get('id', ''),
+                'title': item.get('song', item.get('title', '')),
+                'artist': item.get('singers', item.get('artist', '')),
+                'album': item.get('album_name', item.get('album', '')),
+                'image': item.get('image', '').replace('150x150', '500x500'),
+                'duration': item.get('duration', ''),
+                'url': item.get('media_url', item.get('url', '')),
+                'download_url': item.get('media_preview_url', item.get('media_url', '')),
+                'perma_url': item.get('perma_url', ''),
+                'lyrics': item.get('lyrics', ''),
             })
         
-        # Method 2: Check for redirect URL
-        redirect = soup.find('meta', attrs={'http-equiv': 'refresh'})
-        if redirect:
-            content = redirect.get('content', '')
-            if 'url=' in content.lower():
-                url_part = content.lower().split('url=')[-1]
-                return jsonify({
-                    'url': url_part.strip(),
-                    'title': title,
-                })
-        
-        return jsonify({'error': 'Audio URL not found', 'url': None}), 404
+        return jsonify({'error': 'Song not found'}), 404
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/search')
-def search():
-    """Search for songs or movies"""
-    query = request.args.get('q', '')
+@app.route('/lyrics')
+def lyrics():
+    """Get song lyrics"""
+    song_id = request.args.get('id', '')
+    url = request.args.get('url', '')
     
-    if not query:
-        return jsonify({'results': []})
+    if not song_id and not url:
+        return jsonify({'lyrics': ''})
     
     try:
-        search_url = f"{BASE_URL}/search?keyword={urllib.parse.quote(query)}"
-        response = make_request(search_url)
-        if not response:
-            return jsonify({'error': 'Failed to fetch - site may be blocking', 'results': []}), 500
-        soup = BeautifulSoup(response.text, 'html.parser')
+        if song_id:
+            api_url = f"https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&lyricsid={song_id}&marker=0&_marker=0"
+        else:
+            # Extract ID from URL
+            parts = url.split('/')
+            song_id = parts[-1] if parts else ''
+            api_url = f"https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&lyricsid={song_id}&marker=0&_marker=0"
         
-        results = []
+        response = session.get(api_url, timeout=30)
+        data = response.json()
         
-        # Find all movie/album links
-        for link in soup.find_all('a', href=True):
-            href = link.get('href', '')
-            title = link.text.strip()
-            
-            # Only get movie/album pages
-            if ('-songs' in href or href.startswith('/movie')) and title and len(title) > 3:
-                # Avoid duplicates
-                if not any(r['url'] == f"{BASE_URL}{href}" for r in results):
-                    results.append({
-                        'title': title,
-                        'url': f"{BASE_URL}{href}",
-                        'type': 'movie'
-                    })
+        lyrics_text = ''
+        if isinstance(data, dict):
+            lyrics_text = data.get('lyrics', data.get('text', ''))
         
-        return jsonify({'results': results[:20]})
+        return jsonify({'lyrics': lyrics_text})
     
     except Exception as e:
-        return jsonify({'error': str(e), 'results': []}), 500
-
-@app.route('/trending')
-def trending():
-    """Get trending albums"""
-    try:
-        search_url = f"{BASE_URL}/tamil-songs"
-        response = make_request(search_url)
-        if not response:
-            return jsonify({'error': 'Failed to fetch - site may be blocking', 'albums': []}), 500
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        albums = []
-        
-        # Find album grid items
-        album_items = soup.find_all('div', class_='a-i')
-        
-        for item in album_items[:20]:
-            link = item.find('a')
-            if link:
-                href = link.get('href', '')
-                img = item.find('img')
-                title_elem = item.find('h2')
-                
-                if href and title_elem:
-                    albums.append({
-                        'title': title_elem.text.strip(),
-                        'url': f"{BASE_URL}{href}",
-                        'image': f"{BASE_URL}{img.get('src', '')}" if img else '',
-                        'info': item.find('p').text.strip() if item.find('p') else ''
-                    })
-        
-        return jsonify({'albums': albums})
-    
-    except Exception as e:
-        return jsonify({'error': str(e), 'albums': []}), 500
+        return jsonify({'lyrics': '', 'error': str(e)})
 
 if __name__ == '__main__':
-    print("MassTamil Music Server running at http://localhost:5000")
+    print("JioSaavn Music Server running at http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=False)
