@@ -257,15 +257,22 @@ class Song {
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
-    final preview = json['media_preview_url'] ?? '';
-    final mediaUrl = json['media_url'] ?? '';
+    final preview = json['media_preview_url'] ?? json['previewUrl'] ?? '';
+    final mediaUrl = json['media_url'] ?? json['downloadUrl'] ?? '';
+    final image = json['image'] ?? json['thumbnail'] ?? json['albumArt'] ?? '';
+    final songId = json['id'] ?? json['e_songid'] ?? json['videoId'] ?? '';
+    
+    String imageUrl = image;
+    if (imageUrl.isNotEmpty && !imageUrl.startsWith('http')) {
+      imageUrl = 'https://c-sf.smule.com' + imageUrl;
+    }
     
     return Song(
-      id: json['id'] ?? json['e_songid'] ?? '',
-      title: json['song'] ?? json['title'] ?? 'Unknown',
-      artist: json['primary_artists'] ?? json['singers'] ?? 'Unknown Artist',
-      album: json['album'] ?? '',
-      imageUrl: json['image'] ?? '',
+      id: songId.toString(),
+      title: json['song'] ?? json['title'] ?? json['name'] ?? 'Unknown',
+      artist: json['primary_artists'] ?? json['singers'] ?? json['artist'] ?? 'Unknown Artist',
+      album: json['album'] ?? json['album_name'] ?? 'Unknown Album',
+      imageUrl: imageUrl,
       audioUrl: preview.isNotEmpty ? preview : mediaUrl,
       duration: json['duration'] ?? '0',
       url: json['perma_url'] ?? json['url'] ?? '',
@@ -1347,7 +1354,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 }
 
 class JioSaavnApi {
-  static const String _apiUrl = 'https://saavnapi-nine.vercel.app';
+  static const String _apiUrl = 'https://saavn.dev';
+  static const String _searchUrl = 'https://saavnapi.workers.dev';
 
   static final List<String> _tamilQueries = [
     'tamil songs',
@@ -1359,13 +1367,24 @@ class JioSaavnApi {
 
   static Future<List<Song>> getHome() async {
     try {
-      final response = await http.get(Uri.parse('$_apiUrl/result/?query=tamil+songs')).timeout(const Duration(seconds: 15));
+      final response = await http.get(Uri.parse('$_searchUrl/result/?query=tamil+songs')).timeout(const Duration(seconds: 20));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         return data.map((item) => Song.fromJson(item)).toList();
       }
     } catch (e) {
       debugPrint('Error fetching home: $e');
+    }
+    
+    try {
+      final response = await http.get(Uri.parse('$_apiUrl/ajax/search?query=tamil+songs')).timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> songs = data['songs'] ?? [];
+        return songs.map((item) => Song.fromJson(item)).toList();
+      }
+    } catch (e) {
+      debugPrint('Fallback API error: $e');
     }
     return [];
   }
@@ -1374,7 +1393,7 @@ class JioSaavnApi {
     List<Song> allSongs = [];
     for (int i = 0; i < _tamilQueries.length && allSongs.length < 20; i++) {
       try {
-        final response = await http.get(Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(_tamilQueries[i])}')).timeout(const Duration(seconds: 15));
+        final response = await http.get(Uri.parse('$_searchUrl/result/?query=${Uri.encodeComponent(_tamilQueries[i])}')).timeout(const Duration(seconds: 15));
         if (response.statusCode == 200) {
           final List<dynamic> data = json.decode(response.body);
           allSongs.addAll(data.map((item) => Song.fromJson(item)).toList());
@@ -1394,7 +1413,7 @@ class JioSaavnApi {
 
   static Future<List<Song>> search(String query) async {
     try {
-      final response = await http.get(Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(query)}')).timeout(const Duration(seconds: 15));
+      final response = await http.get(Uri.parse('$_searchUrl/result/?query=${Uri.encodeComponent(query)}')).timeout(const Duration(seconds: 20));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         return data.map((item) => Song.fromJson(item)).toList();
@@ -1402,12 +1421,23 @@ class JioSaavnApi {
     } catch (e) {
       debugPrint('Error searching: $e');
     }
+    
+    try {
+      final response = await http.get(Uri.parse('$_apiUrl/ajax/search?query=${Uri.encodeComponent(query)}')).timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> songs = data['songs'] ?? [];
+        return songs.map((item) => Song.fromJson(item)).toList();
+      }
+    } catch (e) {
+      debugPrint('Fallback search error: $e');
+    }
     return [];
   }
 
   static Future<String> getLyrics(String songId) async {
     try {
-      final response = await http.get(Uri.parse('$_apiUrl/lyrics/?id=$songId')).timeout(const Duration(seconds: 10));
+      final response = await http.get(Uri.parse('$_searchUrl/lyrics/?id=$songId')).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['lyrics'] ?? '';
@@ -1416,5 +1446,18 @@ class JioSaavnApi {
       debugPrint('Error fetching lyrics: $e');
     }
     return '';
+  }
+
+  static Future<String?> getStreamUrl(String songId) async {
+    try {
+      final response = await http.get(Uri.parse('$_apiUrl/ajax/play?url=$songId')).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['url'] ?? '';
+      }
+    } catch (e) {
+      debugPrint('Error getting stream URL: $e');
+    }
+    return null;
   }
 }
