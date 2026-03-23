@@ -257,14 +257,13 @@ class Song {
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
-    final preview = json['media_preview_url'] ?? json['previewUrl'] ?? '';
     final mediaUrl = json['media_url'] ?? json['downloadUrl'] ?? '';
     final image = json['image'] ?? json['thumbnail'] ?? json['albumArt'] ?? '';
     final songId = json['id'] ?? json['e_songid'] ?? json['videoId'] ?? '';
     
     String imageUrl = image;
     if (imageUrl.isNotEmpty && !imageUrl.startsWith('http')) {
-      imageUrl = 'https://c-sf.smule.com' + imageUrl;
+      imageUrl = 'https://c.saavncdn.com' + imageUrl;
     }
     
     return Song(
@@ -273,7 +272,7 @@ class Song {
       artist: json['primary_artists'] ?? json['singers'] ?? json['artist'] ?? 'Unknown Artist',
       album: json['album'] ?? json['album_name'] ?? 'Unknown Album',
       imageUrl: imageUrl,
-      audioUrl: preview.isNotEmpty ? preview : mediaUrl,
+      audioUrl: mediaUrl,
       duration: json['duration'] ?? '0',
       url: json['perma_url'] ?? json['url'] ?? '',
       year: json['year'] ?? '',
@@ -1358,9 +1357,7 @@ class JioSaavnApi {
   static const String _proxyUrl = 'https://sri-keyan-music-player.onrender.com';
 
   static String getProxyUrl(String audioUrl) {
-    if (audioUrl.contains('preview.saavncdn.com')) {
-      return audioUrl;
-    }
+    // Always use proxy to avoid rate limiting
     return '$_proxyUrl/proxy?url=${Uri.encodeComponent(audioUrl)}';
   }
 
