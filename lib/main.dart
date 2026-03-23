@@ -22,6 +22,7 @@ class _MusicAppState extends State<MusicApp> {
   double _loadingProgress = 0.0;
   bool _showPreferences = false;
   List<String> _selectedLanguages = [];
+  List<String> _selectedSingers = [];
 
   static const Color accent = Color(0xFFFF6B35);
   static const Color background = Color(0xFFFFFFFF);
@@ -56,6 +57,7 @@ class _MusicAppState extends State<MusicApp> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('preferences_set', true);
     await prefs.setStringList('languages', _selectedLanguages);
+    await prefs.setStringList('singers', _selectedSingers);
     setState(() => _showPreferences = false);
   }
 
@@ -130,6 +132,7 @@ class _MusicAppState extends State<MusicApp> {
 
   Widget _buildPreferencesScreen() {
     final languages = ['Tamil', 'Hindi', 'English', 'Malayalam', 'Telugu'];
+    final singers = ['A.R. Rahman', 'Anirudh', 'Ilaiyaraaja', 'Vishal', 'Harris Jayaraj', 'G.V. Prakash'];
     
     return Scaffold(
       backgroundColor: background,
@@ -147,7 +150,7 @@ class _MusicAppState extends State<MusicApp> {
                     color: accent,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Icon(Icons.settings, color: background, size: 40),
+                  child: const Icon(Icons.music_note, color: background, size: 40),
                 ),
               ),
               const SizedBox(height: 24),
@@ -161,13 +164,43 @@ class _MusicAppState extends State<MusicApp> {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              const Center(
-                child: Text(
-                  'Select your preferred languages',
-                  style: TextStyle(fontSize: 14, color: textSecondary),
-                  textAlign: TextAlign.center,
-                ),
+              const SizedBox(height: 32),
+              const Text(
+                'Select Your Favorite Singers',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: textPrimary),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: singers.map((singer) {
+                  final isSelected = _selectedSingers.contains(singer);
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedSingers.remove(singer);
+                        } else {
+                          _selectedSingers.add(singer);
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected ? accent : surface,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        singer,
+                        style: TextStyle(
+                          color: isSelected ? background : textSecondary,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
               ),
               const SizedBox(height: 32),
               const Text(
@@ -323,6 +356,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   int _page = 1;
   String _lastCategory = 'For You';
   RepeatMode _repeatMode = RepeatMode.all;
+  String? _preferredSinger;
+  List<String> _selectedSingers = [];
 
   static const Color accent = Color(0xFFFF6B35);
   static const Color background = Color(0xFFFFFFFF);
@@ -337,8 +372,20 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateDeviceType();
+      _loadPreferences();
     });
     _loadSongs();
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final singers = prefs.getStringList('singers') ?? [];
+    if (singers.isNotEmpty) {
+      setState(() {
+        _selectedSingers = singers;
+        _preferredSinger = singers.first;
+      });
+    }
   }
 
   void _updateDeviceType() {
@@ -351,7 +398,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   Future<void> _loadSongs() async {
     setState(() => _isLoading = true);
     try {
-      final songs = await JioSaavnApi.getHome();
+      final songs = await JioSaavnApi.getHome(singer: _preferredSinger);
       setState(() {
         _songs = songs;
         _isLoading = false;
@@ -420,12 +467,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     });
     
     final song = _songs[index];
-    _fetchLyrics(song.id, song.title);
     
     if (song.audioUrl.isNotEmpty) {
       try {
         await _audioPlayer.stop();
-        await _audioPlayer.setUrl(song.audioUrl);
+        final playUrl = JioSaavnApi.getProxyUrl(song.audioUrl);
+        await _audioPlayer.setUrl(playUrl);
         await _audioPlayer.play();
       } catch (e) {
         debugPrint('Error playing: $e');
@@ -1357,14 +1404,18 @@ class JioSaavnApi {
   static const String _proxyUrl = 'https://sri-keyan-music-player.onrender.com';
 
   static String getProxyUrl(String audioUrl) {
-    // Always use proxy to avoid rate limiting
+    // Use proxy to avoid CORS issues
     return '$_proxyUrl/proxy?url=${Uri.encodeComponent(audioUrl)}';
   }
 
-  static Future<List<Song>> getHome() async {
+  static Future<List<Song>> getHome({String? singer}) async {
+    String query = singer != null && singer.isNotEmpty 
+        ? '$singer tamil songs'
+        : 'tamil songs';
+    
     try {
       final response = await http.get(
-        Uri.parse('$_apiUrl/result/?query=tamil+songs'),
+        Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(query)}'),
       ).timeout(const Duration(seconds: 15));
       
       if (response.statusCode == 200) {
@@ -1395,21 +1446,5 @@ class JioSaavnApi {
 
   static Future<String> getLyrics(String songId) async {
     return '';
-  }
-
-  static Future<String?> getStreamUrl(String songId) async {
-    try {
-      final response = await http.get(
-        Uri.parse('$_proxyUrl/play?id=$songId'),
-      ).timeout(const Duration(seconds: 10));
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['url'] ?? data['media_url'];
-      }
-    } catch (e) {
-      debugPrint('Error getting stream: $e');
-    }
-    return null;
   }
 }
