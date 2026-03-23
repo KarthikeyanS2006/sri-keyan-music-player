@@ -1355,52 +1355,37 @@ class JioSaavnApi {
     'tamil melody songs',
     'tamil romantic songs',
     'tamil bgm songs',
-    'tamil party songs',
-    'tamil sad songs',
-    'tamil 2024 songs',
-    'tamil 2023 songs',
-    'tamil 90s songs',
   ];
 
   static Future<List<Song>> getHome() async {
-    List<Song> allSongs = [];
-    for (int i = 0; i < _tamilQueries.length && allSongs.length < 50; i++) {
-      final songs = await _fetchSongs(_tamilQueries[i]);
-      allSongs.addAll(songs);
-    }
-    allSongs = _deduplicateSongs(allSongs);
-    return allSongs;
-  }
-
-  static Future<List<Song>> getHomeWithPage(int page) async {
-    List<Song> allSongs = [];
-    final startIdx = (page - 1) % _tamilQueries.length;
-    
-    for (int i = 0; i < _tamilQueries.length && allSongs.length < 30; i++) {
-      final queryIdx = (startIdx + i) % _tamilQueries.length;
-      final songs = await _fetchSongs('${_tamilQueries[queryIdx]} $page');
-      allSongs.addAll(songs);
-    }
-    allSongs = _deduplicateSongs(allSongs);
-    return allSongs;
-  }
-
-  static Future<List<Song>> _fetchSongs(String query) async {
     try {
-      final response = await http.get(Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(query)}')).timeout(const Duration(seconds: 15));
+      final response = await http.get(Uri.parse('$_apiUrl/result/?query=tamil+songs')).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         return data.map((item) => Song.fromJson(item)).toList();
       }
     } catch (e) {
-      debugPrint('Error fetching songs for "$query": $e');
+      debugPrint('Error fetching home: $e');
     }
     return [];
   }
 
-  static List<Song> _deduplicateSongs(List<Song> songs) {
+  static Future<List<Song>> getHomeWithPage(int page) async {
+    List<Song> allSongs = [];
+    for (int i = 0; i < _tamilQueries.length && allSongs.length < 20; i++) {
+      try {
+        final response = await http.get(Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(_tamilQueries[i])}')).timeout(const Duration(seconds: 15));
+        if (response.statusCode == 200) {
+          final List<dynamic> data = json.decode(response.body);
+          allSongs.addAll(data.map((item) => Song.fromJson(item)).toList());
+        }
+      } catch (e) {
+        debugPrint('Error fetching page $page: $e');
+      }
+    }
+    
     final seenIds = <String>{};
-    return songs.where((song) {
+    return allSongs.where((song) {
       if (seenIds.contains(song.id)) return false;
       seenIds.add(song.id);
       return true;
@@ -1423,16 +1408,6 @@ class JioSaavnApi {
   static Future<String> getLyrics(String songId) async {
     try {
       final response = await http.get(Uri.parse('$_apiUrl/lyrics/?id=$songId')).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return data['lyrics'] ?? '';
-      }
-    } catch (e) {
-      debugPrint('Error fetching lyrics: $e');
-    }
-    
-    try {
-      final response = await http.get(Uri.parse('$_apiUrl/song/?id=$songId')).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['lyrics'] ?? '';
