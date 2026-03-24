@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -507,6 +508,32 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     });
   }
 
+  Future<void> _downloadSong(Song song) async {
+    if (song.audioUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No audio available for download')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Opening ${song.title} for download...')),
+    );
+
+    final downloadUrl = JioSaavnApi.getProxyUrl(song.audioUrl);
+    final uri = Uri.parse(downloadUrl);
+    
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open download link')),
+        );
+      }
+    }
+  }
+
   Future<void> _playNext() async {
     if (_songs.isEmpty) return;
     
@@ -951,6 +978,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                     ),
                   ),
                 ],
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: () => _downloadSong(song),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.download, color: accent, size: 18),
+                  ),
+                ),
               ],
             ),
           ],
