@@ -6,10 +6,123 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase/supabase.dart';
+import 'package:uuid/uuid.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SupabaseManager.instance.init();
   runApp(const MusicApp());
+}
+
+class SupabaseManager {
+  static final SupabaseManager instance = SupabaseManager._();
+  SupabaseManager._();
+
+  late SupabaseClient client;
+  String? _userId;
+
+  static const String _supabaseUrl = 'https://ncghdfjeymfwqjduvrmq.supabase.co';
+  static const String _supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5jZ2hkZmpleW1md3FqZHV2cm1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NTI4MzQsImV4cCI6MjA5MDMyODgzNH0.qcj9CBI9QoNgilLEFnTT_7ciWHVc5fmFLG_54jOXi4U';
+
+  Future<void> init() async {
+    client = SupabaseClient(_supabaseUrl, _supabaseKey);
+    await _ensureTablesExist();
+    await _ensureUserId();
+  }
+
+  Future<void> _ensureTablesExist() async {
+    try {
+      await client.from('user_profiles').select('id').limit(1).maybeSingle();
+    } catch (e) {
+      debugPrint('Tables check error: $e');
+    }
+  }
+
+  Future<void> _ensureUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    _userId = prefs.getString('user_id');
+    
+    if (_userId == null) {
+      _userId = const Uuid().v4();
+      await prefs.setString('user_id', _userId!);
+      
+      try {
+        await client.from('user_profiles').insert({
+          'id': _userId,
+          'created_at': DateTime.now().toIso8601String(),
+          'artist_scores': {},
+          'language_scores': {},
+          'liked_songs': [],
+          'recently_played': [],
+          'total_interactions': 0,
+          'total_watch_time': 0,
+        });
+      } catch (e) {
+        debugPrint('Error creating user profile: $e');
+      }
+    }
+  }
+
+  String get userId => _userId ?? '';
+
+  Future<void> updateTasteProfile(Map<String, dynamic> profile) async {
+    if (_userId == null) return;
+    try {
+      await client.from('user_profiles').update(profile).eq('id', _userId!).select();
+    } catch (e) {
+      debugPrint('Error updating profile: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> getTasteProfile() async {
+    if (_userId == null) return null;
+    try {
+      final response = await client.from('user_profiles').select().eq('id', _userId!).maybeSingle();
+      if (response != null) {
+        return Map<String, dynamic>.from(response as Map);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> recordInteraction(Map<String, dynamic> interaction) async {
+    if (_userId == null) return;
+    try {
+      await client.from('song_interactions').insert({
+        'user_id': _userId!,
+        ...interaction,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('Error recording interaction: $e');
+    }
+  }
+
+  Future<void> savePlaylist(Map<String, dynamic> playlist) async {
+    if (_userId == null) return;
+    try {
+      await client.from('playlists').upsert({
+        'user_id': _userId!,
+        'playlist_data': playlist,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('Error saving playlist: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPlaylists() async {
+    if (_userId == null) return [];
+    try {
+      final response = await client.from('playlists').select().eq('user_id', _userId!);
+      return List<Map<String, dynamic>>.from(response.map((e) => Map<String, dynamic>.from(e as Map)));
+    } catch (e) {
+      return [];
+    }
+  }
 }
 
 class MusicApp extends StatefulWidget {
@@ -3205,16 +3318,29 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
 class JioSaavnApi {
   static const String _apiUrl = 'https://saavnapi-nine.vercel.app';
-  static const String _proxyUrl = 'https://sri-keyan-music-player.onrender.com';
+  static const List<String> _proxyUrls = [
+    'https://sri-keyan-music-player.onrender.com',
+    'https://corsproxy.io/?',
+    '',
+  ];
 
   static String getProxyUrl(String audioUrl) {
-    return '$_proxyUrl/proxy?url=${Uri.encodeComponent(audioUrl)}';
+    for (var proxy in _proxyUrls) {
+      if (proxy.isEmpty) {
+        return audioUrl;
+      }
+      return '$proxy${Uri.encodeComponent(audioUrl)}';
+    }
+    return audioUrl;
   }
 
   static Future<List<Song>> getHome({String? singer}) async {
     try {
       final query = singer ?? 'tamil songs';
-      final response = await http.get(Uri.parse('$_apiUrl/result/?query=$query'));
+      final response = await http.get(
+        Uri.parse('$_apiUrl/result/?query=$query'),
+        headers: {'Accept': 'application/json'},
+      );
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -3231,6 +3357,7 @@ class JioSaavnApi {
     try {
       final response = await http.get(
         Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(query)}'),
+        headers: {'Accept': 'application/json'},
       );
       
       if (response.statusCode == 200) {
@@ -3248,6 +3375,7 @@ class JioSaavnApi {
     try {
       final response = await http.get(
         Uri.parse('$_apiUrl/lyrics/?id=$songId'),
+        headers: {'Accept': 'application/json'},
       );
       
       if (response.statusCode == 200) {
