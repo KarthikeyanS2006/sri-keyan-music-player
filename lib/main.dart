@@ -1152,8 +1152,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   final Set<String> _showOptionsForSong = {};
   List<MusicPlaylist> _playlists = [];
   String? _currentPlaylistFilter;
-  int? _selectedSatisfactionRating;
-  bool _showRatingDialog = false;
 
   static const Color accent = Color(0xFFFF6B35);
   static const Color background = Color(0xFFFFFFFF);
@@ -1270,52 +1268,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         timestamp: DateTime.now(),
         isSession: true,
       ));
-
-      if (!wasRewatched) {
-        setState(() => _showRatingDialog = true);
-      }
     }
     _playNext();
-  }
-
-  void _showSatisfactionDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('How was this song?'),
-        content: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.sentiment_very_dissatisfied, color: Colors.red, size: 40),
-              onPressed: () => _rateSong(1),
-            ),
-            IconButton(
-              icon: const Icon(Icons.sentiment_dissatisfied, color: Colors.orange, size: 40),
-              onPressed: () => _rateSong(2),
-            ),
-            IconButton(
-              icon: const Icon(Icons.sentiment_neutral, color: Colors.grey, size: 40),
-              onPressed: () => _rateSong(3),
-            ),
-            IconButton(
-              icon: const Icon(Icons.sentiment_satisfied, color: Colors.lightGreen, size: 40),
-              onPressed: () => _rateSong(4),
-            ),
-            IconButton(
-              icon: const Icon(Icons.sentiment_very_satisfied, color: Colors.green, size: 40),
-              onPressed: () => _rateSong(5),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _rateSong(int rating) {
-    _selectedSatisfactionRating = rating;
-    Navigator.pop(context);
-    setState(() => _showRatingDialog = false);
   }
 
   Future<void> _fetchLyrics(String songId, String songName) async {
@@ -1696,12 +1650,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
-    if (_showRatingDialog) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showSatisfactionDialog();
-      });
-    }
-
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
@@ -2237,7 +2185,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               _buildStatItem('Songs', '${profile.totalInteractions}', Icons.play_circle),
               _buildStatItem('Watch Time', '${(profile.totalWatchTime / 60).round()}m', Icons.timer),
               _buildStatItem('Liked', '${profile.likedSongs.length}', Icons.favorite),
-              _buildStatItem('Satisfaction', '${profile.averageSatisfaction.round()}%', Icons.emoji_emotions),
             ],
           ),
           const SizedBox(height: 16),
@@ -3319,8 +3266,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 class JioSaavnApi {
   static const String _apiUrl = 'https://saavnapi-nine.vercel.app';
   static const List<String> _proxyUrls = [
-    'https://sri-keyan-music-player.onrender.com',
     'https://corsproxy.io/?',
+    'https://api.allorigins.win/raw?url=',
     '',
   ];
 
