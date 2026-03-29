@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -119,6 +120,11 @@ class _MusicAppState extends State<MusicApp> {
                 color: accent,
                 letterSpacing: 1.5,
               ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Your AI-Powered Music Player',
+              style: TextStyle(fontSize: 14, color: textSecondary),
             ),
             const SizedBox(height: 40),
             Container(
@@ -288,13 +294,13 @@ class _MusicAppState extends State<MusicApp> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _selectedLanguages.isNotEmpty || _selectedSingers.isNotEmpty ? _savePreferences : null,
+                  onPressed: _savePreferences,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
                     foregroundColor: background,
                     disabledBackgroundColor: surface,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                    elevation: _selectedLanguages.isNotEmpty || _selectedSingers.isNotEmpty ? 8 : 0,
+                    elevation: 8,
                   ),
                   child: const Text(
                     'Get Started',
@@ -310,6 +316,8 @@ class _MusicAppState extends State<MusicApp> {
   }
 }
 
+enum SongMood { highEnergy, chill, emotional, party, romantic }
+
 class Song {
   final String id;
   final String title;
@@ -321,6 +329,7 @@ class Song {
   final String url;
   final String year;
   final String language;
+  final SongMood mood;
 
   Song({
     required this.id,
@@ -333,6 +342,7 @@ class Song {
     this.url = '',
     this.year = '',
     this.language = 'Tamil',
+    this.mood = SongMood.chill,
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -346,9 +356,9 @@ class Song {
     }
     
     String language = 'Tamil';
-    final title = json['song'] ?? json['title'] ?? '';
-    final album = json['album'] ?? '';
-    final combined = '$title $album'.toLowerCase();
+    String title = json['song'] ?? json['title'] ?? '';
+    String album = json['album'] ?? '';
+    String combined = '$title $album'.toLowerCase();
     if (combined.contains('hindi') || combined.contains('bollywood')) {
       language = 'Hindi';
     } else if (combined.contains('english') || combined.contains('hollywood')) {
@@ -360,18 +370,30 @@ class Song {
     } else {
       language = 'Tamil';
     }
+
+    SongMood mood = SongMood.chill;
+    if (combined.contains('kuthu') || combined.contains('party') || combined.contains('dance')) {
+      mood = SongMood.party;
+    } else if (combined.contains('love') || combined.contains('romantic') || combined.contains('pudhu')) {
+      mood = SongMood.romantic;
+    } else if (combined.contains('sad') || combined.contains('melancholy')) {
+      mood = SongMood.emotional;
+    } else if (combined.contains('bgm') || combined.contains('theme')) {
+      mood = SongMood.highEnergy;
+    }
     
     return Song(
       id: songId.toString(),
-      title: json['song'] ?? json['title'] ?? json['name'] ?? 'Unknown',
+      title: title,
       artist: json['primary_artists'] ?? json['singers'] ?? json['artist'] ?? 'Unknown Artist',
-      album: json['album'] ?? json['album_name'] ?? 'Unknown Album',
+      album: album.isNotEmpty ? album : 'Unknown Album',
       imageUrl: imageUrl,
       audioUrl: mediaUrl,
       duration: json['duration'] ?? '0',
       url: json['perma_url'] ?? json['url'] ?? '',
       year: json['year'] ?? '',
       language: language,
+      mood: mood,
     );
   }
 
@@ -384,9 +406,24 @@ class Song {
   }
 
   bool get isMovieSong => movieName.isNotEmpty;
+
+  String get moodEmoji {
+    switch (mood) {
+      case SongMood.highEnergy:
+        return '🔥';
+      case SongMood.chill:
+        return '☕';
+      case SongMood.emotional:
+        return '😢';
+      case SongMood.party:
+        return '🎉';
+      case SongMood.romantic:
+        return '💕';
+    }
+  }
 }
 
-enum InteractionType { watch, like, skip, addToPlaylist, notInterested }
+enum InteractionType { watch, like, skip, addToPlaylist, notInterested, share, rewatch, playlistPlay }
 
 class SongInteraction {
   final String songId;
@@ -396,6 +433,7 @@ class SongInteraction {
   final int watchDuration;
   final int totalDuration;
   final DateTime timestamp;
+  final bool isSession;
 
   SongInteraction({
     required this.songId,
@@ -405,9 +443,36 @@ class SongInteraction {
     required this.watchDuration,
     required this.totalDuration,
     required this.timestamp,
+    this.isSession = false,
   });
 
   double get watchPercentage => totalDuration > 0 ? watchDuration / totalDuration : 0;
+  double get satisfactionScore {
+    double base = watchPercentage;
+    switch (type) {
+      case InteractionType.like:
+        base += 0.3;
+        break;
+      case InteractionType.rewatch:
+        base += 0.4;
+        break;
+      case InteractionType.playlistPlay:
+        base += 0.2;
+        break;
+      case InteractionType.share:
+        base += 0.5;
+        break;
+      case InteractionType.skip:
+        base -= 0.3;
+        break;
+      case InteractionType.notInterested:
+        base -= 0.5;
+        break;
+      default:
+        break;
+    }
+    return base.clamp(0.0, 1.0);
+  }
 
   Map<String, dynamic> toJson() => {
     'songId': songId,
@@ -417,6 +482,7 @@ class SongInteraction {
     'watchDuration': watchDuration,
     'totalDuration': totalDuration,
     'timestamp': timestamp.toIso8601String(),
+    'isSession': isSession,
   };
 
   factory SongInteraction.fromJson(Map<String, dynamic> json) => SongInteraction(
@@ -430,24 +496,33 @@ class SongInteraction {
     watchDuration: json['watchDuration'],
     totalDuration: json['totalDuration'],
     timestamp: DateTime.parse(json['timestamp']),
+    isSession: json['isSession'] ?? false,
   );
 }
 
 class UserTasteProfile {
   Map<String, int> artistScores = {};
   Map<String, int> languageScores = {};
+  Map<String, int> moodScores = {};
+  Map<String, int> searchHistory = {};
   int totalInteractions = 0;
   int totalWatchTime = 0;
+  int satisfactionScore = 0;
+  int sessionInteractions = 0;
   List<String> likedSongs = [];
   List<String> dislikedSongs = [];
   List<String> notInterestedSongs = [];
   List<String> recentlyPlayed = [];
+  List<String> rewatchedSongs = [];
+  List<String> sharedSongs = [];
 
   UserTasteProfile();
 
   void updateFromInteraction(SongInteraction interaction) {
     totalInteractions++;
+    if (interaction.isSession) sessionInteractions++;
     totalWatchTime += interaction.watchDuration;
+    satisfactionScore += (interaction.satisfactionScore * 100).round();
 
     switch (interaction.type) {
       case InteractionType.watch:
@@ -456,36 +531,60 @@ class UserTasteProfile {
         languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + watchScore;
         if (!recentlyPlayed.contains(interaction.songId)) {
           recentlyPlayed.insert(0, interaction.songId);
-          if (recentlyPlayed.length > 20) recentlyPlayed.removeLast();
+          if (recentlyPlayed.length > 50) recentlyPlayed.removeLast();
         }
         break;
       case InteractionType.like:
-        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 10;
-        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + 10;
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 15;
+        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + 15;
         if (!likedSongs.contains(interaction.songId)) likedSongs.add(interaction.songId);
         dislikedSongs.remove(interaction.songId);
         if (!recentlyPlayed.contains(interaction.songId)) {
           recentlyPlayed.insert(0, interaction.songId);
-          if (recentlyPlayed.length > 20) recentlyPlayed.removeLast();
         }
         break;
+      case InteractionType.rewatch:
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 20;
+        if (!rewatchedSongs.contains(interaction.songId)) rewatchedSongs.add(interaction.songId);
+        if (!likedSongs.contains(interaction.songId)) likedSongs.add(interaction.songId);
+        break;
+      case InteractionType.share:
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 25;
+        if (!sharedSongs.contains(interaction.songId)) sharedSongs.add(interaction.songId);
+        break;
       case InteractionType.skip:
-        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) - 3;
-        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) - 3;
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) - 5;
+        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) - 5;
         break;
       case InteractionType.notInterested:
         if (!notInterestedSongs.contains(interaction.songId)) notInterestedSongs.add(interaction.songId);
         dislikedSongs.add(interaction.songId);
-        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) - 5;
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) - 10;
         break;
       case InteractionType.addToPlaylist:
-        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 5;
-        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + 5;
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 10;
+        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + 10;
+        break;
+      case InteractionType.playlistPlay:
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 8;
         break;
     }
 
     artistScores.removeWhere((key, value) => value <= 0);
     languageScores.removeWhere((key, value) => value <= 0);
+  }
+
+  void addSearchQuery(String query) {
+    searchHistory[query] = (searchHistory[query] ?? 0) + 1;
+    if (searchHistory.length > 100) {
+      searchHistory.remove(searchHistory.keys.first);
+    }
+  }
+
+  List<String> getTopSearches(int count) {
+    final sorted = searchHistory.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.take(count).map((e) => e.key).toList();
   }
 
   List<String> getTopArtists(int count) {
@@ -506,30 +605,91 @@ class UserTasteProfile {
   bool isLiked(String songId) => likedSongs.contains(songId);
   bool isNotInterested(String songId) => notInterestedSongs.contains(songId);
   bool isDisliked(String songId) => dislikedSongs.contains(songId);
+  bool isRewatched(String songId) => rewatchedSongs.contains(songId);
+  bool isShared(String songId) => sharedSongs.contains(songId);
+
+  double get averageSatisfaction => totalInteractions > 0 ? satisfactionScore / totalInteractions : 0;
+  double get sessionVsTotalRatio => totalInteractions > 0 ? sessionInteractions / totalInteractions : 0;
 
   Map<String, dynamic> toJson() => {
     'artistScores': artistScores,
     'languageScores': languageScores,
+    'moodScores': moodScores,
+    'searchHistory': searchHistory,
     'totalInteractions': totalInteractions,
     'totalWatchTime': totalWatchTime,
+    'satisfactionScore': satisfactionScore,
+    'sessionInteractions': sessionInteractions,
     'likedSongs': likedSongs,
     'dislikedSongs': dislikedSongs,
     'notInterestedSongs': notInterestedSongs,
     'recentlyPlayed': recentlyPlayed,
+    'rewatchedSongs': rewatchedSongs,
+    'sharedSongs': sharedSongs,
   };
 
   factory UserTasteProfile.fromJson(Map<String, dynamic> json) {
     final profile = UserTasteProfile();
     profile.artistScores = Map<String, int>.from(json['artistScores'] ?? {});
     profile.languageScores = Map<String, int>.from(json['languageScores'] ?? {});
+    profile.moodScores = Map<String, int>.from(json['moodScores'] ?? {});
+    profile.searchHistory = Map<String, int>.from(json['searchHistory'] ?? {});
     profile.totalInteractions = json['totalInteractions'] ?? 0;
     profile.totalWatchTime = json['totalWatchTime'] ?? 0;
+    profile.satisfactionScore = json['satisfactionScore'] ?? 0;
+    profile.sessionInteractions = json['sessionInteractions'] ?? 0;
     profile.likedSongs = List<String>.from(json['likedSongs'] ?? []);
     profile.dislikedSongs = List<String>.from(json['dislikedSongs'] ?? []);
     profile.notInterestedSongs = List<String>.from(json['notInterestedSongs'] ?? []);
     profile.recentlyPlayed = List<String>.from(json['recentlyPlayed'] ?? []);
+    profile.rewatchedSongs = List<String>.from(json['rewatchedSongs'] ?? []);
+    profile.sharedSongs = List<String>.from(json['sharedSongs'] ?? []);
     return profile;
   }
+}
+
+class MusicPlaylist {
+  final String id;
+  String name;
+  String description;
+  final DateTime createdAt;
+  List<String> songIds;
+  bool isAutoGenerated;
+  final String? basedOnArtist;
+  final String? basedOnMood;
+
+  MusicPlaylist({
+    required this.id,
+    required this.name,
+    this.description = '',
+    required this.createdAt,
+    List<String>? songIds,
+    this.isAutoGenerated = false,
+    this.basedOnArtist,
+    this.basedOnMood,
+  }) : songIds = songIds ?? [];
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'createdAt': createdAt.toIso8601String(),
+    'songIds': songIds,
+    'isAutoGenerated': isAutoGenerated,
+    'basedOnArtist': basedOnArtist,
+    'basedOnMood': basedOnMood,
+  };
+
+  factory MusicPlaylist.fromJson(Map<String, dynamic> json) => MusicPlaylist(
+    id: json['id'],
+    name: json['name'],
+    description: json['description'] ?? '',
+    createdAt: DateTime.parse(json['createdAt']),
+    songIds: List<String>.from(json['songIds'] ?? []),
+    isAutoGenerated: json['isAutoGenerated'] ?? false,
+    basedOnArtist: json['basedOnArtist'],
+    basedOnMood: json['basedOnMood'],
+  );
 }
 
 class RecommendationEngine {
@@ -538,6 +698,7 @@ class RecommendationEngine {
 
   UserTasteProfile tasteProfile = UserTasteProfile();
   List<SongInteraction> _interactionHistory = [];
+  List<MusicPlaylist> _playlists = [];
 
   Future<void> init() async {
     await _loadFromStorage();
@@ -563,12 +724,57 @@ class RecommendationEngine {
         _interactionHistory = [];
       }
     }
+
+    final playlistsJson = prefs.getString('playlists');
+    if (playlistsJson != null) {
+      try {
+        final list = jsonDecode(playlistsJson) as List;
+        _playlists = list.map((e) => MusicPlaylist.fromJson(e)).toList();
+      } catch (e) {
+        _playlists = [];
+      }
+    }
+
+    if (_playlists.isEmpty) {
+      await _createDefaultPlaylists();
+    }
+  }
+
+  Future<void> _createDefaultPlaylists() async {
+    _playlists = [
+      MusicPlaylist(
+        id: 'favorites',
+        name: 'Favorites',
+        description: 'Your liked songs',
+        createdAt: DateTime.now(),
+      ),
+      MusicPlaylist(
+        id: 'discover_mix',
+        name: 'Discover Mix',
+        description: 'AI-generated mix based on your taste',
+        createdAt: DateTime.now(),
+        isAutoGenerated: true,
+      ),
+      MusicPlaylist(
+        id: 'recently_played',
+        name: 'Recently Played',
+        description: 'Songs you\'ve been listening to',
+        createdAt: DateTime.now(),
+        isAutoGenerated: true,
+      ),
+    ];
+    await _savePlaylists();
   }
 
   Future<void> _saveToStorage() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('taste_profile', jsonEncode(tasteProfile.toJson()));
     await prefs.setString('interaction_history', jsonEncode(_interactionHistory.map((e) => e.toJson()).toList()));
+  }
+
+  Future<void> _savePlaylists() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('playlists', jsonEncode(_playlists.map((e) => e.toJson()).toList()));
   }
 
   Future<void> updateTasteProfile({
@@ -592,31 +798,45 @@ class RecommendationEngine {
     _interactionHistory.add(interaction);
     tasteProfile.updateFromInteraction(interaction);
     
-    if (_interactionHistory.length > 500) {
-      _interactionHistory = _interactionHistory.sublist(_interactionHistory.length - 500);
+    if (_interactionHistory.length > 1000) {
+      _interactionHistory = _interactionHistory.sublist(_interactionHistory.length - 1000);
     }
     
     await _saveToStorage();
   }
 
-  double calculateSongScore(Song song) {
+  void addSearchQuery(String query) {
+    tasteProfile.addSearchQuery(query);
+    _saveToStorage();
+  }
+
+  double calculateSongScore(Song song, {bool useSessionWeight = false}) {
     if (tasteProfile.isNotInterested(song.id) || tasteProfile.isDisliked(song.id)) {
       return -1000;
     }
 
     double score = 0;
+    final sessionWeight = useSessionWeight ? 2.0 : 1.0;
 
     final artistScore = tasteProfile.artistScores[song.artist] ?? 0;
-    score += artistScore * 2.0;
+    score += artistScore * 2.0 * sessionWeight;
 
     final languageScore = tasteProfile.languageScores[song.language] ?? 0;
-    score += languageScore * 1.5;
+    score += languageScore * 1.5 * sessionWeight;
 
     if (tasteProfile.isLiked(song.id)) {
       score += 50;
     }
 
-    final topArtists = tasteProfile.getTopArtists(3);
+    if (tasteProfile.isRewatched(song.id)) {
+      score += 40;
+    }
+
+    if (tasteProfile.isShared(song.id)) {
+      score += 30;
+    }
+
+    final topArtists = tasteProfile.getTopArtists(5);
     if (topArtists.contains(song.artist)) {
       score += 30;
     }
@@ -626,31 +846,48 @@ class RecommendationEngine {
       score += 20;
     }
 
-    final recentPlayed = tasteProfile.recentlyPlayed.take(10).toList();
-    score += (10 - recentPlayed.indexOf(song.id)).clamp(0, 10).toDouble();
+    final recentPlayed = tasteProfile.recentlyPlayed.take(20).toList();
+    int recencyBonus = 0;
+    for (int i = 0; i < recentPlayed.length; i++) {
+      if (recentPlayed[i] == song.id) {
+        recencyBonus = (10 - i).clamp(0, 10);
+        break;
+      }
+    }
+    score += recencyBonus.toDouble();
 
-    score += (tasteProfile.totalInteractions.clamp(0, 100) / 10);
+    score += (tasteProfile.totalInteractions.clamp(0, 200) / 10);
+
+    score += tasteProfile.averageSatisfaction * 10;
+
+    final topSearches = tasteProfile.getTopSearches(5);
+    final titleLower = song.title.toLowerCase();
+    for (var search in topSearches) {
+      if (titleLower.contains(search.toLowerCase())) {
+        score += 15;
+      }
+    }
 
     return score;
   }
 
-  List<Song> getRecommendedSongs(List<Song> songs, {int limit = 20}) {
-    final scoredSongs = songs.map((song) => MapEntry(song, calculateSongScore(song))).toList();
+  List<Song> getRecommendedSongs(List<Song> songs, {int limit = 20, bool useSessionWeight = false}) {
+    final scoredSongs = songs.map((song) => MapEntry(song, calculateSongScore(song, useSessionWeight: useSessionWeight))).toList();
     scoredSongs.sort((a, b) => b.value.compareTo(a.value));
     return scoredSongs.take(limit).map((e) => e.key).toList();
   }
 
   List<Song> getRecommendedForYou(List<Song> songs) {
-    return getRecommendedSongs(songs, limit: 20);
+    return getRecommendedSongs(songs, limit: 25);
   }
 
   List<Song> getSimilarToRecent(List<Song> songs) {
-    if (tasteProfile.recentlyPlayed.isEmpty) return songs.take(10).toList();
+    if (tasteProfile.recentlyPlayed.isEmpty) return songs.take(15).toList();
     
     final recentArtists = <String>{};
     final recentLanguages = <String>{};
     
-    for (var interaction in _interactionHistory.take(20)) {
+    for (var interaction in _interactionHistory.take(30)) {
       if (interaction.type == InteractionType.watch && interaction.watchPercentage > 0.5) {
         recentArtists.add(interaction.artist);
         recentLanguages.add(interaction.language);
@@ -664,6 +901,92 @@ class RecommendationEngine {
     
     similar.sort((a, b) => calculateSongScore(b).compareTo(calculateSongScore(a)));
     return similar.take(15).toList();
+  }
+
+  List<Song> getFansAlsoLiked(List<Song> songs) {
+    final topArtists = tasteProfile.getTopArtists(3);
+    final topLikedSongs = tasteProfile.likedSongs.take(10).toList();
+    
+    final fansAlsoLike = songs.where((song) {
+      if (tasteProfile.isNotInterested(song.id)) return false;
+      if (topLikedSongs.contains(song.id)) return false;
+      return topArtists.contains(song.artist);
+    }).toList();
+    
+    fansAlsoLike.sort((a, b) => calculateSongScore(b).compareTo(calculateSongScore(a)));
+    return fansAlsoLike.take(15).toList();
+  }
+
+  List<Song> getDiscoverMix(List<Song> songs) {
+    final mix = <Song>[];
+    final topArtists = tasteProfile.getTopArtists(3);
+    final topLanguages = tasteProfile.getTopLanguages(2);
+    
+    final scored = songs.where((s) => !tasteProfile.isNotInterested(s.id)).toList();
+    scored.sort((a, b) => calculateSongScore(b).compareTo(calculateSongScore(a)));
+    
+    int added = 0;
+    for (var song in scored) {
+      if (added >= 20) break;
+      if (topArtists.contains(song.artist) || topLanguages.contains(song.language)) {
+        mix.add(song);
+        added++;
+      }
+    }
+    
+    if (mix.length < 20) {
+      for (var song in scored) {
+        if (added >= 20) break;
+        if (!mix.contains(song)) {
+          mix.add(song);
+          added++;
+        }
+      }
+    }
+    
+    return mix;
+  }
+
+  List<MusicPlaylist> getPlaylists() => _playlists;
+
+  Future<void> createPlaylist(String name, {String description = ''}) async {
+    final playlist = MusicPlaylist(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: name,
+      description: description,
+      createdAt: DateTime.now(),
+    );
+    _playlists.add(playlist);
+    await _savePlaylists();
+  }
+
+  Future<void> deletePlaylist(String id) async {
+    _playlists.removeWhere((p) => p.id == id);
+    await _savePlaylists();
+  }
+
+  Future<void> addSongToPlaylist(String playlistId, String songId) async {
+    final index = _playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1 && !_playlists[index].songIds.contains(songId)) {
+      _playlists[index].songIds.add(songId);
+      _playlists[index].songIds.insert(0, _playlists[index].songIds.removeLast());
+      await _savePlaylists();
+    }
+  }
+
+  Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
+    final index = _playlists.indexWhere((p) => p.id == playlistId);
+    if (index != -1) {
+      _playlists[index].songIds.remove(songId);
+      await _savePlaylists();
+    }
+  }
+
+  List<Song> getSongsFromPlaylist(MusicPlaylist playlist, List<Song> allSongs) {
+    return playlist.songIds
+        .map((id) => allSongs.firstWhere((s) => s.id == id, orElse: () => allSongs.first))
+        .where((s) => s.id != allSongs.first.id)
+        .toList();
   }
 
   Future<void> clearHistory() async {
@@ -687,12 +1010,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   late TabController _tabController;
-  late TabController _moodTabController;
   
   List<Song> _songs = [];
   List<Song> _searchResults = [];
   List<Song> _recommendedSongs = [];
   List<Song> _similarSongs = [];
+  List<Song> _fansAlsoLiked = [];
+  List<Song> _discoverMix = [];
   int _currentIndex = 0;
   bool _isPlaying = false;
   bool _isLoading = true;
@@ -713,6 +1037,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   int _watchStartTime = 0;
   final Set<String> _likedSongs = {};
   final Set<String> _showOptionsForSong = {};
+  List<MusicPlaylist> _playlists = [];
+  String? _currentPlaylistFilter;
+  int? _selectedSatisfactionRating;
+  bool _showRatingDialog = false;
 
   static const Color accent = Color(0xFFFF6B35);
   static const Color background = Color(0xFFFFFFFF);
@@ -725,7 +1053,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
-    _moodTabController = TabController(length: 5, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateDeviceType();
       _loadPreferences();
@@ -748,6 +1075,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     await RecommendationEngine.instance.init();
     setState(() {
       _likedSongs.addAll(RecommendationEngine.instance.tasteProfile.likedSongs);
+      _playlists = RecommendationEngine.instance.getPlaylists();
     });
   }
 
@@ -763,13 +1091,17 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     try {
       final songs = await JioSaavnApi.getHome(singer: _preferredSinger);
       
-      final recommended = RecommendationEngine.instance.getRecommendedSongs(songs);
+      final recommended = RecommendationEngine.instance.getRecommendedForYou(songs);
       final similar = RecommendationEngine.instance.getSimilarToRecent(songs);
+      final fansAlso = RecommendationEngine.instance.getFansAlsoLiked(songs);
+      final discoverMix = RecommendationEngine.instance.getDiscoverMix(songs);
       
       setState(() {
         _songs = songs;
         _recommendedSongs = recommended;
-        _similarSongs = similar.toList();
+        _similarSongs = similar;
+        _fansAlsoLiked = fansAlso;
+        _discoverMix = discoverMix;
         _isLoading = false;
       });
       _initAudio();
@@ -789,6 +1121,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _audioPlayer.positionStream.listen((position) {
       if (mounted) {
         setState(() => _position = position);
+        if (position.inSeconds == _duration.inSeconds && _duration.inSeconds > 0) {
+          _onSongComplete();
+        }
       }
     });
 
@@ -810,17 +1145,64 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   void _onSongComplete() {
     if (_currentIndex >= 0 && _currentIndex < _songs.length) {
       final song = _songs[_currentIndex];
+      final wasRewatched = RecommendationEngine.instance.tasteProfile.isRewatched(song.id);
+      
       RecommendationEngine.instance.recordInteraction(SongInteraction(
         songId: song.id,
         artist: song.artist,
         language: song.language,
-        type: InteractionType.watch,
+        type: wasRewatched ? InteractionType.rewatch : InteractionType.watch,
         watchDuration: _duration.inSeconds,
         totalDuration: _duration.inSeconds,
         timestamp: DateTime.now(),
+        isSession: true,
       ));
+
+      if (!wasRewatched) {
+        setState(() => _showRatingDialog = true);
+      }
     }
     _playNext();
+  }
+
+  void _showSatisfactionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('How was this song?'),
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.sentiment_very_dissatisfied, color: Colors.red, size: 40),
+              onPressed: () => _rateSong(1),
+            ),
+            IconButton(
+              icon: const Icon(Icons.sentiment_dissatisfied, color: Colors.orange, size: 40),
+              onPressed: () => _rateSong(2),
+            ),
+            IconButton(
+              icon: const Icon(Icons.sentiment_neutral, color: Colors.grey, size: 40),
+              onPressed: () => _rateSong(3),
+            ),
+            IconButton(
+              icon: const Icon(Icons.sentiment_satisfied, color: Colors.lightGreen, size: 40),
+              onPressed: () => _rateSong(4),
+            ),
+            IconButton(
+              icon: const Icon(Icons.sentiment_very_satisfied, color: Colors.green, size: 40),
+              onPressed: () => _rateSong(5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _rateSong(int rating) {
+    _selectedSatisfactionRating = rating;
+    Navigator.pop(context);
+    setState(() => _showRatingDialog = false);
   }
 
   Future<void> _fetchLyrics(String songId, String songName) async {
@@ -855,6 +1237,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         watchDuration: watchDuration,
         totalDuration: _duration.inSeconds > 0 ? _duration.inSeconds : int.tryParse(prevSong.duration) ?? 0,
         timestamp: DateTime.now(),
+        isSession: true,
       ));
     }
     
@@ -926,13 +1309,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open download link')),
-        );
-      }
     }
+  }
+
+  Future<void> _shareSong(Song song) async {
+    final shareText = '🎵 Listen to "${song.title}" by ${song.artist} on Sri Keyan Music!\n\n${song.url}';
+    await Share.share(shareText, subject: song.title);
+    
+    RecommendationEngine.instance.recordInteraction(SongInteraction(
+      songId: song.id,
+      artist: song.artist,
+      language: song.language,
+      type: InteractionType.share,
+      watchDuration: _position.inSeconds,
+      totalDuration: _duration.inSeconds,
+      timestamp: DateTime.now(),
+      isSession: true,
+    ));
   }
 
   Future<void> _playNext() async {
@@ -976,6 +1369,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   Future<void> _search(String query) async {
     setState(() => _isSearching = query.isNotEmpty);
+    if (query.isNotEmpty) {
+      RecommendationEngine.instance.addSearchQuery(query);
+    }
     if (query.isEmpty) {
       setState(() => _searchResults = []);
       return;
@@ -1041,12 +1437,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       watchDuration: 0,
       totalDuration: 0,
       timestamp: DateTime.now(),
+      isSession: true,
     ));
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isLiked ? 'Removed from likes' : 'Added to likes'),
+          content: Text(isLiked ? 'Removed from likes' : 'Added to favorites'),
           duration: const Duration(seconds: 1),
         ),
       );
@@ -1062,6 +1459,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       watchDuration: 0,
       totalDuration: 0,
       timestamp: DateTime.now(),
+      isSession: true,
     ));
     
     setState(() {
@@ -1079,6 +1477,97 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     }
   }
 
+  void _showAddToPlaylistDialog(Song song) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Add to Playlist', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            ..._playlists.map((playlist) => ListTile(
+              leading: Icon(playlist.isAutoGenerated ? Icons.auto_awesome : Icons.playlist_play),
+              title: Text(playlist.name),
+              subtitle: Text('${playlist.songIds.length} songs'),
+              onTap: () {
+                RecommendationEngine.instance.addSongToPlaylist(playlist.id, song.id);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Added to ${playlist.name}')),
+                );
+              },
+            )),
+            ListTile(
+              leading: const Icon(Icons.add),
+              title: const Text('Create New Playlist'),
+              onTap: () {
+                Navigator.pop(context);
+                _showCreatePlaylistDialog(song);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCreatePlaylistDialog(Song? song) {
+    final nameController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Create Playlist'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(labelText: 'Playlist Name'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.isNotEmpty) {
+                await RecommendationEngine.instance.createPlaylist(nameController.text);
+                if (song != null && _playlists.isNotEmpty) {
+                  await RecommendationEngine.instance.addSongToPlaylist(
+                    RecommendationEngine.instance.getPlaylists().last.id,
+                    song.id,
+                  );
+                }
+                setState(() {
+                  _playlists = RecommendationEngine.instance.getPlaylists();
+                });
+                if (mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showArtistPage(String artist) async {
+    setState(() => _isLoading = true);
+    try {
+      final artistSongs = await JioSaavnApi.search('$artist tamil songs');
+      setState(() {
+        _songs = artistSongs;
+        _currentCategory = artist;
+        _isLoading = false;
+        _isSearching = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -1086,7 +1575,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _searchController.dispose();
     _focusNode.dispose();
     _tabController.dispose();
-    _moodTabController.dispose();
     _lyricsScrollController.dispose();
     super.dispose();
   }
@@ -1095,6 +1583,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
+    if (_showRatingDialog) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showSatisfactionDialog();
+      });
+    }
+
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
@@ -1169,6 +1663,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             ),
           ),
           const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.library_music),
+            color: accent,
+            onPressed: () => _showPlaylistsSheet(),
+          ),
           if (RecommendationEngine.instance.tasteProfile.totalInteractions > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1182,7 +1681,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                   const Icon(Icons.auto_awesome, color: accent, size: 14),
                   const SizedBox(width: 4),
                   Text(
-                    'AI Powered',
+                    'AI',
                     style: const TextStyle(
                       color: accent,
                       fontSize: 12,
@@ -1193,6 +1692,91 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  void _showPlaylistsSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Your Playlists', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _showCreatePlaylistDialog(null);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _playlists.length,
+                itemBuilder: (context, index) {
+                  final playlist = _playlists[index];
+                  return ListTile(
+                    leading: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: playlist.isAutoGenerated ? Colors.purple.withValues(alpha: 0.1) : accent.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        playlist.isAutoGenerated ? Icons.auto_awesome : Icons.playlist_play,
+                        color: playlist.isAutoGenerated ? Colors.purple : accent,
+                      ),
+                    ),
+                    title: Text(playlist.name),
+                    subtitle: Text(playlist.description.isNotEmpty ? playlist.description : '${playlist.songIds.length} songs'),
+                    trailing: playlist.isAutoGenerated 
+                        ? IconButton(
+                            icon: const Icon(Icons.refresh),
+                            onPressed: () async {
+                              if (playlist.id == 'discover_mix') {
+                                final mix = RecommendationEngine.instance.getDiscoverMix(_songs);
+                                setState(() {
+                                  _discoverMix = mix;
+                                  _songs = mix;
+                                  _currentCategory = 'Discover Mix';
+                                });
+                              }
+                            },
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              await RecommendationEngine.instance.deletePlaylist(playlist.id);
+                              setState(() {
+                                _playlists = RecommendationEngine.instance.getPlaylists();
+                              });
+                            },
+                          ),
+                    onTap: () {
+                      if (playlist.id == 'discover_mix') {
+                        setState(() {
+                          _songs = _discoverMix;
+                          _currentCategory = 'Discover Mix';
+                        });
+                      }
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1248,10 +1832,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           final playlist = playlists[index];
           final isSelected = _currentCategory == playlist['name'];
           return GestureDetector(
-            onTap: () {
-              _moodTabController.animateTo(index);
-              _changePlaylist(playlist['name'] as String);
-            },
+            onTap: () => _changePlaylist(playlist['name'] as String),
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 4),
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1320,25 +1901,42 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   }
 
   Widget _buildForYouContent(List<Song> allSongs) {
+    final profile = RecommendationEngine.instance.tasteProfile;
+    
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (RecommendationEngine.instance.tasteProfile.totalInteractions > 5) ...[
-            _buildSectionHeader('Recommended for You', Icons.auto_awesome),
+          if (profile.totalInteractions > 3) ...[
+            _buildSectionHeader('Discover Mix', Icons.auto_awesome, trailing: 'Updated Daily'),
             const SizedBox(height: 8),
-            _buildHorizontalSongList(_recommendedSongs.take(10).toList()),
+            _buildHorizontalSongList(_discoverMix.take(10).toList()),
             const SizedBox(height: 24),
-            _buildSectionHeader('Because You Like ${RecommendationEngine.instance.tasteProfile.topArtist}', Icons.thumb_up),
+            
+            _buildSectionHeader('Because You Like ${profile.topArtist}', Icons.thumb_up),
             const SizedBox(height: 8),
             _buildHorizontalSongList(_similarSongs.take(10).toList()),
             const SizedBox(height: 24),
+
+            if (_fansAlsoLiked.isNotEmpty) ...[
+              _buildSectionHeader('Fans Also Like', Icons.people),
+              const SizedBox(height: 8),
+              _buildHorizontalSongList(_fansAlsoLiked.take(10).toList()),
+              const SizedBox(height: 24),
+            ],
+
+            _buildSectionHeader('Recommended for You', Icons.recommend),
+            const SizedBox(height: 8),
+            _buildHorizontalSongList(_recommendedSongs.take(10).toList()),
+            const SizedBox(height: 24),
           ],
-          _buildSectionHeader('Your Taste Profile', Icons.person),
+          
+          _buildSectionHeader('Your Taste Profile', Icons.insights),
           const SizedBox(height: 8),
           _buildTasteProfileCard(),
           const SizedBox(height: 24),
+          
           _buildSectionHeader('All Songs', Icons.library_music),
           const SizedBox(height: 8),
           ...allSongs.asMap().entries.map((entry) {
@@ -1351,7 +1949,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     );
   }
 
-  Widget _buildSectionHeader(String title, IconData icon) {
+  Widget _buildSectionHeader(String title, IconData icon, {String? trailing}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
@@ -1366,12 +1964,28 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               color: textPrimary,
             ),
           ),
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.purple.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                trailing,
+                style: const TextStyle(fontSize: 10, color: Colors.purple, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildHorizontalSongList(List<Song> songs) {
+    if (songs.isEmpty) return const SizedBox.shrink();
+    
     return SizedBox(
       height: 200,
       child: ListView.builder(
@@ -1436,6 +2050,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                     ),
                   ),
                   Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(song.moodEmoji, style: const TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                  Positioned(
                     bottom: 8,
                     right: 8,
                     child: Container(
@@ -1474,6 +2100,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     final profile = RecommendationEngine.instance.tasteProfile;
     final topArtists = profile.getTopArtists(5);
     final topLanguages = profile.getTopLanguages(5);
+    final topSearches = profile.getTopSearches(3);
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1494,65 +2121,110 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem('Songs Played', '${profile.totalInteractions}'),
-              _buildStatItem('Watch Time', '${(profile.totalWatchTime / 60).round()} min'),
-              _buildStatItem('Liked', '${profile.likedSongs.length}'),
+              _buildStatItem('Songs', '${profile.totalInteractions}', Icons.play_circle),
+              _buildStatItem('Watch Time', '${(profile.totalWatchTime / 60).round()}m', Icons.timer),
+              _buildStatItem('Liked', '${profile.likedSongs.length}', Icons.favorite),
+              _buildStatItem('Satisfaction', '${profile.averageSatisfaction.round()}%', Icons.emoji_emotions),
             ],
           ),
           const SizedBox(height: 16),
-          const Text('Top Artists', style: TextStyle(fontWeight: FontWeight.bold, color: textPrimary)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: topArtists.map((artist) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
+          const Divider(),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Top Artists', style: TextStyle(fontWeight: FontWeight.bold, color: textPrimary, fontSize: 12)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: topArtists.take(3).map((artist) {
+                        return GestureDetector(
+                          onTap: () => _showArtistPage(artist),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(artist, style: const TextStyle(color: accent, fontSize: 11)),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.arrow_forward, color: accent, size: 10),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ),
-                child: Text(artist, style: const TextStyle(color: accent, fontSize: 12)),
-              );
-            }).toList(),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
-          const Text('Languages', style: TextStyle(fontWeight: FontWeight.bold, color: textPrimary)),
+          const Text('Languages', style: TextStyle(fontWeight: FontWeight.bold, color: textPrimary, fontSize: 12)),
           const SizedBox(height: 8),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: topLanguages.map((lang) {
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.blue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(lang, style: const TextStyle(color: Colors.blue, fontSize: 12)),
+                child: Text(lang, style: const TextStyle(color: Colors.blue, fontSize: 11)),
               );
             }).toList(),
           ),
+          if (topSearches.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Recent Searches', style: TextStyle(fontWeight: FontWeight.bold, color: textPrimary, fontSize: 12)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: topSearches.map((search) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(search, style: const TextStyle(color: textSecondary, fontSize: 11)),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildStatItem(String label, String value) {
+  Widget _buildStatItem(String label, String value, IconData icon) {
     return Column(
       children: [
+        Icon(icon, color: accent, size: 20),
+        const SizedBox(height: 4),
         Text(
           value,
           style: const TextStyle(
-            fontSize: 24,
+            fontSize: 18,
             fontWeight: FontWeight.bold,
             color: accent,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: textSecondary),
+          style: const TextStyle(fontSize: 10, color: textSecondary),
         ),
       ],
     );
@@ -1690,6 +2362,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                             child: Icon(Icons.equalizer, color: background, size: 24),
                           ),
                         ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(song.moodEmoji, style: const TextStyle(fontSize: 10)),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1712,11 +2396,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              song.artist,
-                              style: const TextStyle(color: textSecondary, fontSize: 12),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            child: GestureDetector(
+                              onTap: () => _showArtistPage(song.artist),
+                              child: Text(
+                                song.artist,
+                                style: const TextStyle(color: accent, fontSize: 12),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1764,14 +2451,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                         ),
                         const SizedBox(width: 6),
                         GestureDetector(
-                          onTap: () => _downloadSong(song),
+                          onTap: () => _shareSong(song),
                           child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.1),
+                              color: Colors.green.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Icon(Icons.download, color: accent, size: 18),
+                            child: const Icon(Icons.share, color: Colors.green, size: 18),
                           ),
                         ),
                       ],
@@ -1791,9 +2478,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildOptionButton(Icons.playlist_add, 'Add to Playlist', () {}),
-                    _buildOptionButton(Icons.shuffle, 'Shuffle Play', () {}),
-                    _buildOptionButton(Icons.share, 'Share', () {}),
+                    _buildOptionButton(Icons.playlist_add, 'Playlist', () => _showAddToPlaylistDialog(song)),
+                    _buildOptionButton(Icons.shuffle, 'Shuffle', () {}),
+                    _buildOptionButton(Icons.share, 'Share', () => _shareSong(song)),
+                    _buildOptionButton(Icons.download, 'Download', () => _downloadSong(song)),
                     _buildOptionButton(Icons.not_interested, 'Not Interested', () => _markNotInterested(song)),
                   ],
                 ),
@@ -1898,6 +2586,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                   icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 24),
                   color: isLiked ? Colors.red : background,
                   onPressed: () => _toggleLike(song),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share, size: 22),
+                  color: background,
+                  onPressed: () => _shareSong(song),
                 ),
                 _buildMiniPlayerControls(),
               ],
@@ -2070,10 +2763,31 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               Positioned(
                 top: 8,
                 right: 8,
-                child: IconButton(
-                  icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 32),
-                  color: isLiked ? Colors.red : background,
-                  onPressed: () => _toggleLike(song),
+                child: Column(
+                  children: [
+                    IconButton(
+                      icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 32),
+                      color: isLiked ? Colors.red : textSecondary,
+                      onPressed: () => _toggleLike(song),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.share, size: 28),
+                      color: Colors.green,
+                      onPressed: () => _shareSong(song),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(song.moodEmoji, style: const TextStyle(fontSize: 20)),
                 ),
               ),
             ],
@@ -2085,9 +2799,36 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
-          Text(
-            song.artist,
-            style: const TextStyle(fontSize: 16, color: accent, fontWeight: FontWeight.w600),
+          GestureDetector(
+            onTap: () => _showArtistPage(song.artist),
+            child: Text(
+              song.artist,
+              style: const TextStyle(fontSize: 16, color: accent, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(song.language, style: const TextStyle(color: Colors.blue, fontSize: 12)),
+              ),
+              const SizedBox(width: 8),
+              if (song.isMovieSong)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(song.movieName, style: const TextStyle(color: Colors.purple, fontSize: 12)),
+                ),
+            ],
           ),
           const SizedBox(height: 24),
           _buildDesktopProgressSection(),
@@ -2279,6 +3020,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           if (song.duration.isNotEmpty) _buildDetailRow('Duration', _formatDuration(Duration(seconds: int.tryParse(song.duration) ?? 0))),
           if (song.isMovieSong) _buildDetailRow('Movie', song.movieName),
           _buildDetailRow('Language', song.language),
+          _buildDetailRow('Mood', '${song.moodEmoji} ${song.mood.name}'),
         ],
       ),
     );
@@ -2334,9 +3076,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                     style: TextStyle(color: textSecondary, fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.more_vert, size: 28),
-                    color: textPrimary,
-                    onPressed: () {},
+                    icon: const Icon(Icons.share, size: 28),
+                    color: Colors.green,
+                    onPressed: () => _shareSong(song),
                   ),
                 ],
               ),
@@ -2356,6 +3098,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                             icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 32),
                             color: isLiked ? Colors.red : textSecondary,
                             onPressed: () => _toggleLike(song),
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(song.moodEmoji, style: const TextStyle(fontSize: 20)),
                           ),
                         ),
                       ],
@@ -2432,9 +3186,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 8),
-          Text(
-            song.artist,
-            style: const TextStyle(fontSize: 16, color: accent, fontWeight: FontWeight.w600),
+          GestureDetector(
+            onTap: () => _showArtistPage(song.artist),
+            child: Text(
+              song.artist,
+              style: const TextStyle(fontSize: 16, color: accent, fontWeight: FontWeight.w600),
+            ),
           ),
           if (song.album.isNotEmpty) ...[
             const SizedBox(height: 4),
