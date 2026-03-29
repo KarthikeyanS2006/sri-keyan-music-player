@@ -59,6 +59,13 @@ class _MusicAppState extends State<MusicApp> {
     await prefs.setBool('preferences_set', true);
     await prefs.setStringList('languages', _selectedLanguages);
     await prefs.setStringList('singers', _selectedSingers);
+    
+    await RecommendationEngine.instance.init();
+    await RecommendationEngine.instance.updateTasteProfile(
+      languages: _selectedLanguages,
+      artists: _selectedSingers,
+    );
+    
     setState(() => _showPreferences = false);
   }
 
@@ -93,6 +100,13 @@ class _MusicAppState extends State<MusicApp> {
               decoration: BoxDecoration(
                 color: accent,
                 borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.3),
+                    blurRadius: 30,
+                    offset: const Offset(0, 15),
+                  ),
+                ],
               ),
               child: const Icon(Icons.music_note, size: 60, color: background),
             ),
@@ -150,6 +164,13 @@ class _MusicAppState extends State<MusicApp> {
                   decoration: BoxDecoration(
                     color: accent,
                     borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
                   ),
                   child: const Icon(Icons.music_note, color: background, size: 40),
                 ),
@@ -163,6 +184,13 @@ class _MusicAppState extends State<MusicApp> {
                     fontWeight: FontWeight.bold,
                     color: textPrimary,
                   ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  'Help us personalize your experience',
+                  style: TextStyle(fontSize: 16, color: textSecondary),
                 ),
               ),
               const SizedBox(height: 32),
@@ -191,6 +219,13 @@ class _MusicAppState extends State<MusicApp> {
                       decoration: BoxDecoration(
                         color: isSelected ? accent : surface,
                         borderRadius: BorderRadius.circular(20),
+                        boxShadow: isSelected ? [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ] : null,
                       ),
                       child: Text(
                         singer,
@@ -229,6 +264,13 @@ class _MusicAppState extends State<MusicApp> {
                       decoration: BoxDecoration(
                         color: isSelected ? accent : surface,
                         borderRadius: BorderRadius.circular(20),
+                        boxShadow: isSelected ? [
+                          BoxShadow(
+                            color: accent.withValues(alpha: 0.3),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ] : null,
                       ),
                       child: Text(
                         lang,
@@ -246,15 +288,16 @@ class _MusicAppState extends State<MusicApp> {
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _selectedLanguages.isNotEmpty ? _savePreferences : null,
+                  onPressed: _selectedLanguages.isNotEmpty || _selectedSingers.isNotEmpty ? _savePreferences : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
                     foregroundColor: background,
                     disabledBackgroundColor: surface,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                    elevation: _selectedLanguages.isNotEmpty || _selectedSingers.isNotEmpty ? 8 : 0,
                   ),
                   child: const Text(
-                    'Continue',
+                    'Get Started',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -277,6 +320,7 @@ class Song {
   final String duration;
   final String url;
   final String year;
+  final String language;
 
   Song({
     required this.id,
@@ -288,6 +332,7 @@ class Song {
     required this.duration,
     this.url = '',
     this.year = '',
+    this.language = 'Tamil',
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -300,6 +345,22 @@ class Song {
       imageUrl = 'https://c.saavncdn.com' + imageUrl;
     }
     
+    String language = 'Tamil';
+    final title = json['song'] ?? json['title'] ?? '';
+    final album = json['album'] ?? '';
+    final combined = '$title $album'.toLowerCase();
+    if (combined.contains('hindi') || combined.contains('bollywood')) {
+      language = 'Hindi';
+    } else if (combined.contains('english') || combined.contains('hollywood')) {
+      language = 'English';
+    } else if (combined.contains('malayalam')) {
+      language = 'Malayalam';
+    } else if (combined.contains('telugu')) {
+      language = 'Telugu';
+    } else {
+      language = 'Tamil';
+    }
+    
     return Song(
       id: songId.toString(),
       title: json['song'] ?? json['title'] ?? json['name'] ?? 'Unknown',
@@ -310,6 +371,7 @@ class Song {
       duration: json['duration'] ?? '0',
       url: json['perma_url'] ?? json['url'] ?? '',
       year: json['year'] ?? '',
+      language: language,
     );
   }
 
@@ -322,6 +384,293 @@ class Song {
   }
 
   bool get isMovieSong => movieName.isNotEmpty;
+}
+
+enum InteractionType { watch, like, skip, addToPlaylist, notInterested }
+
+class SongInteraction {
+  final String songId;
+  final String artist;
+  final String language;
+  final InteractionType type;
+  final int watchDuration;
+  final int totalDuration;
+  final DateTime timestamp;
+
+  SongInteraction({
+    required this.songId,
+    required this.artist,
+    required this.language,
+    required this.type,
+    required this.watchDuration,
+    required this.totalDuration,
+    required this.timestamp,
+  });
+
+  double get watchPercentage => totalDuration > 0 ? watchDuration / totalDuration : 0;
+
+  Map<String, dynamic> toJson() => {
+    'songId': songId,
+    'artist': artist,
+    'language': language,
+    'type': type.name,
+    'watchDuration': watchDuration,
+    'totalDuration': totalDuration,
+    'timestamp': timestamp.toIso8601String(),
+  };
+
+  factory SongInteraction.fromJson(Map<String, dynamic> json) => SongInteraction(
+    songId: json['songId'],
+    artist: json['artist'],
+    language: json['language'],
+    type: InteractionType.values.firstWhere(
+      (e) => e.name == json['type'],
+      orElse: () => InteractionType.watch,
+    ),
+    watchDuration: json['watchDuration'],
+    totalDuration: json['totalDuration'],
+    timestamp: DateTime.parse(json['timestamp']),
+  );
+}
+
+class UserTasteProfile {
+  Map<String, int> artistScores = {};
+  Map<String, int> languageScores = {};
+  int totalInteractions = 0;
+  int totalWatchTime = 0;
+  List<String> likedSongs = [];
+  List<String> dislikedSongs = [];
+  List<String> notInterestedSongs = [];
+  List<String> recentlyPlayed = [];
+
+  UserTasteProfile();
+
+  void updateFromInteraction(SongInteraction interaction) {
+    totalInteractions++;
+    totalWatchTime += interaction.watchDuration;
+
+    switch (interaction.type) {
+      case InteractionType.watch:
+        int watchScore = (interaction.watchPercentage * 10).round();
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + watchScore;
+        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + watchScore;
+        if (!recentlyPlayed.contains(interaction.songId)) {
+          recentlyPlayed.insert(0, interaction.songId);
+          if (recentlyPlayed.length > 20) recentlyPlayed.removeLast();
+        }
+        break;
+      case InteractionType.like:
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 10;
+        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + 10;
+        if (!likedSongs.contains(interaction.songId)) likedSongs.add(interaction.songId);
+        dislikedSongs.remove(interaction.songId);
+        if (!recentlyPlayed.contains(interaction.songId)) {
+          recentlyPlayed.insert(0, interaction.songId);
+          if (recentlyPlayed.length > 20) recentlyPlayed.removeLast();
+        }
+        break;
+      case InteractionType.skip:
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) - 3;
+        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) - 3;
+        break;
+      case InteractionType.notInterested:
+        if (!notInterestedSongs.contains(interaction.songId)) notInterestedSongs.add(interaction.songId);
+        dislikedSongs.add(interaction.songId);
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) - 5;
+        break;
+      case InteractionType.addToPlaylist:
+        artistScores[interaction.artist] = (artistScores[interaction.artist] ?? 0) + 5;
+        languageScores[interaction.language] = (languageScores[interaction.language] ?? 0) + 5;
+        break;
+    }
+
+    artistScores.removeWhere((key, value) => value <= 0);
+    languageScores.removeWhere((key, value) => value <= 0);
+  }
+
+  List<String> getTopArtists(int count) {
+    final sorted = artistScores.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.take(count).map((e) => e.key).toList();
+  }
+
+  List<String> getTopLanguages(int count) {
+    final sorted = languageScores.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.take(count).map((e) => e.key).toList();
+  }
+
+  String get topArtist => getTopArtists(1).firstOrNull ?? 'Anirudh';
+  String get topLanguage => getTopLanguages(1).firstOrNull ?? 'Tamil';
+
+  bool isLiked(String songId) => likedSongs.contains(songId);
+  bool isNotInterested(String songId) => notInterestedSongs.contains(songId);
+  bool isDisliked(String songId) => dislikedSongs.contains(songId);
+
+  Map<String, dynamic> toJson() => {
+    'artistScores': artistScores,
+    'languageScores': languageScores,
+    'totalInteractions': totalInteractions,
+    'totalWatchTime': totalWatchTime,
+    'likedSongs': likedSongs,
+    'dislikedSongs': dislikedSongs,
+    'notInterestedSongs': notInterestedSongs,
+    'recentlyPlayed': recentlyPlayed,
+  };
+
+  factory UserTasteProfile.fromJson(Map<String, dynamic> json) {
+    final profile = UserTasteProfile();
+    profile.artistScores = Map<String, int>.from(json['artistScores'] ?? {});
+    profile.languageScores = Map<String, int>.from(json['languageScores'] ?? {});
+    profile.totalInteractions = json['totalInteractions'] ?? 0;
+    profile.totalWatchTime = json['totalWatchTime'] ?? 0;
+    profile.likedSongs = List<String>.from(json['likedSongs'] ?? []);
+    profile.dislikedSongs = List<String>.from(json['dislikedSongs'] ?? []);
+    profile.notInterestedSongs = List<String>.from(json['notInterestedSongs'] ?? []);
+    profile.recentlyPlayed = List<String>.from(json['recentlyPlayed'] ?? []);
+    return profile;
+  }
+}
+
+class RecommendationEngine {
+  static final RecommendationEngine instance = RecommendationEngine._();
+  RecommendationEngine._();
+
+  UserTasteProfile tasteProfile = UserTasteProfile();
+  List<SongInteraction> _interactionHistory = [];
+
+  Future<void> init() async {
+    await _loadFromStorage();
+  }
+
+  Future<void> _loadFromStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final profileJson = prefs.getString('taste_profile');
+    if (profileJson != null) {
+      try {
+        tasteProfile = UserTasteProfile.fromJson(jsonDecode(profileJson));
+      } catch (e) {
+        tasteProfile = UserTasteProfile();
+      }
+    }
+
+    final historyJson = prefs.getString('interaction_history');
+    if (historyJson != null) {
+      try {
+        final list = jsonDecode(historyJson) as List;
+        _interactionHistory = list.map((e) => SongInteraction.fromJson(e)).toList();
+      } catch (e) {
+        _interactionHistory = [];
+      }
+    }
+  }
+
+  Future<void> _saveToStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('taste_profile', jsonEncode(tasteProfile.toJson()));
+    await prefs.setString('interaction_history', jsonEncode(_interactionHistory.map((e) => e.toJson()).toList()));
+  }
+
+  Future<void> updateTasteProfile({
+    List<String>? languages,
+    List<String>? artists,
+  }) async {
+    if (languages != null) {
+      for (var lang in languages) {
+        tasteProfile.languageScores[lang] = (tasteProfile.languageScores[lang] ?? 0) + 20;
+      }
+    }
+    if (artists != null) {
+      for (var artist in artists) {
+        tasteProfile.artistScores[artist] = (tasteProfile.artistScores[artist] ?? 0) + 20;
+      }
+    }
+    await _saveToStorage();
+  }
+
+  Future<void> recordInteraction(SongInteraction interaction) async {
+    _interactionHistory.add(interaction);
+    tasteProfile.updateFromInteraction(interaction);
+    
+    if (_interactionHistory.length > 500) {
+      _interactionHistory = _interactionHistory.sublist(_interactionHistory.length - 500);
+    }
+    
+    await _saveToStorage();
+  }
+
+  double calculateSongScore(Song song) {
+    if (tasteProfile.isNotInterested(song.id) || tasteProfile.isDisliked(song.id)) {
+      return -1000;
+    }
+
+    double score = 0;
+
+    final artistScore = tasteProfile.artistScores[song.artist] ?? 0;
+    score += artistScore * 2.0;
+
+    final languageScore = tasteProfile.languageScores[song.language] ?? 0;
+    score += languageScore * 1.5;
+
+    if (tasteProfile.isLiked(song.id)) {
+      score += 50;
+    }
+
+    final topArtists = tasteProfile.getTopArtists(3);
+    if (topArtists.contains(song.artist)) {
+      score += 30;
+    }
+
+    final topLanguages = tasteProfile.getTopLanguages(2);
+    if (topLanguages.contains(song.language)) {
+      score += 20;
+    }
+
+    final recentPlayed = tasteProfile.recentlyPlayed.take(10).toList();
+    score += (10 - recentPlayed.indexOf(song.id)).clamp(0, 10).toDouble();
+
+    score += (tasteProfile.totalInteractions.clamp(0, 100) / 10);
+
+    return score;
+  }
+
+  List<Song> getRecommendedSongs(List<Song> songs, {int limit = 20}) {
+    final scoredSongs = songs.map((song) => MapEntry(song, calculateSongScore(song))).toList();
+    scoredSongs.sort((a, b) => b.value.compareTo(a.value));
+    return scoredSongs.take(limit).map((e) => e.key).toList();
+  }
+
+  List<Song> getRecommendedForYou(List<Song> songs) {
+    return getRecommendedSongs(songs, limit: 20);
+  }
+
+  List<Song> getSimilarToRecent(List<Song> songs) {
+    if (tasteProfile.recentlyPlayed.isEmpty) return songs.take(10).toList();
+    
+    final recentArtists = <String>{};
+    final recentLanguages = <String>{};
+    
+    for (var interaction in _interactionHistory.take(20)) {
+      if (interaction.type == InteractionType.watch && interaction.watchPercentage > 0.5) {
+        recentArtists.add(interaction.artist);
+        recentLanguages.add(interaction.language);
+      }
+    }
+    
+    final similar = songs.where((song) {
+      if (tasteProfile.isNotInterested(song.id)) return false;
+      return recentArtists.contains(song.artist) || recentLanguages.contains(song.language);
+    }).toList();
+    
+    similar.sort((a, b) => calculateSongScore(b).compareTo(calculateSongScore(a)));
+    return similar.take(15).toList();
+  }
+
+  Future<void> clearHistory() async {
+    _interactionHistory = [];
+    tasteProfile = UserTasteProfile();
+    await _saveToStorage();
+  }
 }
 
 class MusicPlayerScreen extends StatefulWidget {
@@ -338,9 +687,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   late TabController _tabController;
+  late TabController _moodTabController;
   
   List<Song> _songs = [];
   List<Song> _searchResults = [];
+  List<Song> _recommendedSongs = [];
+  List<Song> _similarSongs = [];
   int _currentIndex = 0;
   bool _isPlaying = false;
   bool _isLoading = true;
@@ -349,16 +701,18 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   bool _showFullPlayer = false;
-  String _currentCategory = 'For You';
   String _currentLyrics = '';
   final ScrollController _lyricsScrollController = ScrollController();
   bool _isDesktop = false;
   bool _isLoadingMore = false;
   int _page = 1;
-  String _lastCategory = 'For You';
   RepeatMode _repeatMode = RepeatMode.all;
   String? _preferredSinger;
   List<String> _selectedSingers = [];
+  List<String> _selectedLanguages = [];
+  int _watchStartTime = 0;
+  final Set<String> _likedSongs = {};
+  final Set<String> _showOptionsForSong = {};
 
   static const Color accent = Color(0xFFFF6B35);
   static const Color background = Color(0xFFFFFFFF);
@@ -371,6 +725,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
+    _moodTabController = TabController(length: 5, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateDeviceType();
       _loadPreferences();
@@ -381,12 +736,19 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   Future<void> _loadPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final singers = prefs.getStringList('singers') ?? [];
+    final languages = prefs.getStringList('languages') ?? [];
     if (singers.isNotEmpty) {
       setState(() {
         _selectedSingers = singers;
         _preferredSinger = singers.first;
       });
     }
+    setState(() => _selectedLanguages = languages);
+    
+    await RecommendationEngine.instance.init();
+    setState(() {
+      _likedSongs.addAll(RecommendationEngine.instance.tasteProfile.likedSongs);
+    });
   }
 
   void _updateDeviceType() {
@@ -400,8 +762,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     setState(() => _isLoading = true);
     try {
       final songs = await JioSaavnApi.getHome(singer: _preferredSinger);
+      
+      final recommended = RecommendationEngine.instance.getRecommendedSongs(songs);
+      final similar = RecommendationEngine.instance.getSimilarToRecent(songs);
+      
       setState(() {
         _songs = songs;
+        _recommendedSongs = recommended;
+        _similarSongs = similar.toList();
         _isLoading = false;
       });
       _initAudio();
@@ -430,13 +798,29 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           _isPlaying = state.playing;
           _isBuffering = state.processingState == ProcessingState.loading || 
                          state.processingState == ProcessingState.buffering;
-          
+        
           if (state.processingState == ProcessingState.completed) {
-            _playNext();
+            _onSongComplete();
           }
         });
       }
     });
+  }
+
+  void _onSongComplete() {
+    if (_currentIndex >= 0 && _currentIndex < _songs.length) {
+      final song = _songs[_currentIndex];
+      RecommendationEngine.instance.recordInteraction(SongInteraction(
+        songId: song.id,
+        artist: song.artist,
+        language: song.language,
+        type: InteractionType.watch,
+        watchDuration: _duration.inSeconds,
+        totalDuration: _duration.inSeconds,
+        timestamp: DateTime.now(),
+      ));
+    }
+    _playNext();
   }
 
   Future<void> _fetchLyrics(String songId, String songName) async {
@@ -459,15 +843,32 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   Future<void> _playSong(int index) async {
     if (index < 0 || index >= _songs.length) return;
     
+    if (_currentIndex >= 0 && _currentIndex < _songs.length && _position.inSeconds > 5) {
+      final prevSong = _songs[_currentIndex];
+      final watchDuration = _position.inSeconds;
+      
+      RecommendationEngine.instance.recordInteraction(SongInteraction(
+        songId: prevSong.id,
+        artist: prevSong.artist,
+        language: prevSong.language,
+        type: watchDuration < 30 ? InteractionType.skip : InteractionType.watch,
+        watchDuration: watchDuration,
+        totalDuration: _duration.inSeconds > 0 ? _duration.inSeconds : int.tryParse(prevSong.duration) ?? 0,
+        timestamp: DateTime.now(),
+      ));
+    }
+    
     setState(() {
       _currentIndex = index;
       _isBuffering = true;
       _duration = Duration.zero;
       _position = Duration.zero;
       _currentLyrics = '';
+      _watchStartTime = DateTime.now().millisecondsSinceEpoch;
     });
     
     final song = _songs[index];
+    _fetchLyrics(song.id, song.title);
     
     if (song.audioUrl.isNotEmpty) {
       try {
@@ -581,7 +982,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     }
     try {
       final results = await JioSaavnApi.search(query);
-      setState(() => _searchResults = results);
+      final scored = RecommendationEngine.instance.getRecommendedSongs(results, limit: results.length);
+      setState(() => _searchResults = scored);
     } catch (e) {
       setState(() => _searchResults = []);
     }
@@ -620,6 +1022,63 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     });
   }
 
+  Future<void> _toggleLike(Song song) async {
+    final isLiked = _likedSongs.contains(song.id);
+    
+    if (isLiked) {
+      _likedSongs.remove(song.id);
+    } else {
+      _likedSongs.add(song.id);
+    }
+    
+    setState(() {});
+    
+    await RecommendationEngine.instance.recordInteraction(SongInteraction(
+      songId: song.id,
+      artist: song.artist,
+      language: song.language,
+      type: isLiked ? InteractionType.skip : InteractionType.like,
+      watchDuration: 0,
+      totalDuration: 0,
+      timestamp: DateTime.now(),
+    ));
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isLiked ? 'Removed from likes' : 'Added to likes'),
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  Future<void> _markNotInterested(Song song) async {
+    await RecommendationEngine.instance.recordInteraction(SongInteraction(
+      songId: song.id,
+      artist: song.artist,
+      language: song.language,
+      type: InteractionType.notInterested,
+      watchDuration: 0,
+      totalDuration: 0,
+      timestamp: DateTime.now(),
+    ));
+    
+    setState(() {
+      _songs.removeWhere((s) => s.id == song.id);
+      _showOptionsForSong.remove(song.id);
+    });
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Won\'t show this song again'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -627,9 +1086,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _searchController.dispose();
     _focusNode.dispose();
     _tabController.dispose();
+    _moodTabController.dispose();
     _lyricsScrollController.dispose();
     super.dispose();
   }
+
+  String _currentCategory = 'For You';
 
   @override
   Widget build(BuildContext context) {
@@ -687,6 +1149,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             decoration: BoxDecoration(
               color: accent,
               borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: const Icon(Icons.music_note, color: background, size: 24),
           ),
@@ -700,20 +1169,27 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             ),
           ),
           const Spacer(),
-          if (_preferredSinger != null)
+          if (RecommendationEngine.instance.tasteProfile.totalInteractions > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: accent.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Text(
-                _preferredSinger!,
-                style: const TextStyle(
-                  color: accent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.auto_awesome, color: accent, size: 14),
+                  const SizedBox(width: 4),
+                  Text(
+                    'AI Powered',
+                    style: const TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -772,13 +1248,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           final playlist = playlists[index];
           final isSelected = _currentCategory == playlist['name'];
           return GestureDetector(
-            onTap: () => _changePlaylist(playlist['name'] as String),
+            onTap: () {
+              _moodTabController.animateTo(index);
+              _changePlaylist(playlist['name'] as String);
+            },
             child: Container(
               margin: const EdgeInsets.symmetric(horizontal: 4),
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
                 color: isSelected ? accent : surface,
                 borderRadius: BorderRadius.circular(20),
+                boxShadow: isSelected ? [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ] : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -826,6 +1312,253 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       );
     }
 
+    if (_currentCategory == 'For You' && !_isSearching && _recommendedSongs.isNotEmpty) {
+      return _buildForYouContent(displaySongs);
+    }
+
+    return _buildSongListView(displaySongs);
+  }
+
+  Widget _buildForYouContent(List<Song> allSongs) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (RecommendationEngine.instance.tasteProfile.totalInteractions > 5) ...[
+            _buildSectionHeader('Recommended for You', Icons.auto_awesome),
+            const SizedBox(height: 8),
+            _buildHorizontalSongList(_recommendedSongs.take(10).toList()),
+            const SizedBox(height: 24),
+            _buildSectionHeader('Because You Like ${RecommendationEngine.instance.tasteProfile.topArtist}', Icons.thumb_up),
+            const SizedBox(height: 8),
+            _buildHorizontalSongList(_similarSongs.take(10).toList()),
+            const SizedBox(height: 24),
+          ],
+          _buildSectionHeader('Your Taste Profile', Icons.person),
+          const SizedBox(height: 8),
+          _buildTasteProfileCard(),
+          const SizedBox(height: 24),
+          _buildSectionHeader('All Songs', Icons.library_music),
+          const SizedBox(height: 8),
+          ...allSongs.asMap().entries.map((entry) {
+            final song = entry.value;
+            final isSelected = entry.key == _currentIndex;
+            return _buildSongCard(song, isSelected, entry.key);
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: accent, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: textPrimary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHorizontalSongList(List<Song> songs) {
+    return SizedBox(
+      height: 200,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        itemCount: songs.length,
+        itemBuilder: (context, index) {
+          final song = songs[index];
+          return _buildHorizontalSongCard(song, index);
+        },
+      ),
+    );
+  }
+
+  Widget _buildHorizontalSongCard(Song song, int index) {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _songs = List.from(_recommendedSongs);
+          _currentIndex = index;
+        });
+        _playSong(index);
+      },
+      child: Container(
+        width: 140,
+        margin: const EdgeInsets.only(right: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 140,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: surface,
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: song.imageUrl.isNotEmpty
+                        ? Image.network(song.imageUrl, fit: BoxFit.cover, width: 140, height: 140, errorBuilder: (_, __, ___) => Center(child: Icon(Icons.music_note, color: accent, size: 40)))
+                        : Center(child: Icon(Icons.music_note, color: accent, size: 40)),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.5),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Icon(Icons.play_arrow, color: background, size: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              song.title,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: textPrimary),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              song.artist,
+              style: const TextStyle(fontSize: 11, color: textSecondary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTasteProfileCard() {
+    final profile = RecommendationEngine.instance.tasteProfile;
+    final topArtists = profile.getTopArtists(5);
+    final topLanguages = profile.getTopLanguages(5);
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildStatItem('Songs Played', '${profile.totalInteractions}'),
+              _buildStatItem('Watch Time', '${(profile.totalWatchTime / 60).round()} min'),
+              _buildStatItem('Liked', '${profile.likedSongs.length}'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Text('Top Artists', style: TextStyle(fontWeight: FontWeight.bold, color: textPrimary)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: topArtists.map((artist) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(artist, style: const TextStyle(color: accent, fontSize: 12)),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+          const Text('Languages', style: TextStyle(fontWeight: FontWeight.bold, color: textPrimary)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: topLanguages.map((lang) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(lang, style: const TextStyle(color: Colors.blue, fontSize: 12)),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: accent,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: textSecondary),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSongListView(List<Song> displaySongs) {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollEndNotification &&
@@ -879,6 +1612,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   }
 
   Widget _buildSongCard(Song song, bool isSelected, int index) {
+    final isLiked = _likedSongs.contains(song.id);
+    final showOptions = _showOptionsForSong.contains(song.id);
+    
     return GestureDetector(
       onTap: () {
         if (_isSearching) {
@@ -891,109 +1627,193 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         }
         _playSong(_isSearching ? _songs.indexOf(song) : index);
       },
+      onLongPress: () {
+        setState(() {
+          if (showOptions) {
+            _showOptionsForSong.remove(song.id);
+          } else {
+            _showOptionsForSong.add(song.id);
+          }
+        });
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: isSelected ? accent.withValues(alpha: 0.08) : background,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? accent : surface,
-            width: isSelected ? 1.5 : 1,
+            color: isSelected ? accent : Colors.transparent,
+            width: isSelected ? 2 : 1,
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                color: surface,
-              ),
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: song.imageUrl.isNotEmpty
-                        ? Image.network(song.imageUrl, fit: BoxFit.cover, width: 56, height: 56, errorBuilder: (_, __, ___) => const Icon(Icons.music_note, color: accent))
-                        : const Icon(Icons.music_note, color: accent),
-                  ),
-                  if (isSelected)
-                    Container(
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.equalizer, color: background, size: 24),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    song.title,
-                    style: TextStyle(
-                      color: textPrimary,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    song.artist,
-                    style: const TextStyle(color: textSecondary, fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  _formatDuration(Duration(seconds: int.tryParse(song.duration) ?? 0)),
-                  style: const TextStyle(color: textSecondary, fontSize: 11),
-                ),
-                if (song.movieName.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text(
-                      'Movie',
-                      style: TextStyle(color: accent, fontSize: 9, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                GestureDetector(
-                  onTap: () => _downloadSong(song),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(Icons.download, color: accent, size: 18),
-                  ),
-                ),
-              ],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: surface,
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: song.imageUrl.isNotEmpty
+                            ? Image.network(song.imageUrl, fit: BoxFit.cover, width: 56, height: 56, errorBuilder: (_, __, ___) => const Icon(Icons.music_note, color: accent))
+                            : const Icon(Icons.music_note, color: accent),
+                      ),
+                      if (isSelected)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.8),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.equalizer, color: background, size: 24),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        song.title,
+                        style: TextStyle(
+                          color: textPrimary,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              song.artist,
+                              style: const TextStyle(color: textSecondary, fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              song.language,
+                              style: const TextStyle(color: Colors.blue, fontSize: 9, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _formatDuration(Duration(seconds: int.tryParse(song.duration) ?? 0)),
+                      style: const TextStyle(color: textSecondary, fontSize: 11),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        GestureDetector(
+                          onTap: () => _toggleLike(song),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isLiked ? Colors.red.withValues(alpha: 0.1) : accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              isLiked ? Icons.favorite : Icons.favorite_border,
+                              color: isLiked ? Colors.red : accent,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => _downloadSong(song),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Icon(Icons.download, color: accent, size: 18),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (showOptions) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildOptionButton(Icons.playlist_add, 'Add to Playlist', () {}),
+                    _buildOptionButton(Icons.shuffle, 'Shuffle Play', () {}),
+                    _buildOptionButton(Icons.share, 'Share', () {}),
+                    _buildOptionButton(Icons.not_interested, 'Not Interested', () => _markNotInterested(song)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionButton(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Icon(icon, color: textSecondary, size: 20),
+          const SizedBox(height: 4),
+          Text(label, style: const TextStyle(color: textSecondary, fontSize: 10)),
+        ],
       ),
     );
   }
@@ -1002,6 +1822,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     if (_songs.isEmpty) return const SizedBox.shrink();
     if (_currentIndex < 0 || _currentIndex >= _songs.length) return const SizedBox.shrink();
     final song = _songs[_currentIndex];
+    final isLiked = _likedSongs.contains(song.id);
     
     return GestureDetector(
       onTap: () => setState(() => _showFullPlayer = true),
@@ -1010,12 +1831,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: accent,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: accent.withValues(alpha: 0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              color: accent.withValues(alpha: 0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
@@ -1029,10 +1850,17 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                   height: 50,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     child: song.imageUrl.isNotEmpty
                         ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.music_note, color: background, size: 28))
                         : const Icon(Icons.music_note, color: background, size: 28),
@@ -1066,10 +1894,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                     ],
                   ),
                 ),
+                IconButton(
+                  icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 24),
+                  color: isLiked ? Colors.red : background,
+                  onPressed: () => _toggleLike(song),
+                ),
                 _buildMiniPlayerControls(),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             _buildProgressBar(),
           ],
         ),
@@ -1108,7 +1941,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     return Column(
       children: [
         Container(
-          height: 3,
+          height: 4,
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(2),
@@ -1124,7 +1957,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -1189,6 +2022,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             decoration: BoxDecoration(
               color: accent,
               borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: const Icon(Icons.music_note, color: background, size: 22),
           ),
@@ -1218,12 +2058,26 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     
     if (_currentIndex < 0 || _currentIndex >= _songs.length) return const SizedBox.shrink();
     final song = _songs[_currentIndex];
+    final isLiked = _likedSongs.contains(song.id);
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(40),
       child: Column(
         children: [
-          _buildDesktopAlbumArt(song),
+          Stack(
+            children: [
+              _buildDesktopAlbumArt(song),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton(
+                  icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 32),
+                  color: isLiked ? Colors.red : background,
+                  onPressed: () => _toggleLike(song),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 24),
           Text(
             song.title,
@@ -1264,17 +2118,17 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       height: 280,
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: accent.withValues(alpha: 0.2),
-            blurRadius: 30,
-            offset: const Offset(0, 15),
+            color: accent.withValues(alpha: 0.3),
+            blurRadius: 40,
+            offset: const Offset(0, 20),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: song.imageUrl.isNotEmpty
             ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.music_note, color: accent, size: 100))
             : const Icon(Icons.music_note, color: accent, size: 100),
@@ -1345,9 +2199,16 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         Container(
           width: 64,
           height: 64,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: accent,
             shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.4),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           child: _isBuffering
               ? const Center(child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 3, color: background)))
@@ -1417,6 +2278,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           if (song.year.isNotEmpty) _buildDetailRow('Year', song.year),
           if (song.duration.isNotEmpty) _buildDetailRow('Duration', _formatDuration(Duration(seconds: int.tryParse(song.duration) ?? 0))),
           if (song.isMovieSong) _buildDetailRow('Movie', song.movieName),
+          _buildDetailRow('Language', song.language),
         ],
       ),
     );
@@ -1450,6 +2312,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     if (_songs.isEmpty) return const SizedBox.shrink();
     if (_currentIndex < 0 || _currentIndex >= _songs.length) return const SizedBox.shrink();
     final song = _songs[_currentIndex];
+    final isLiked = _likedSongs.contains(song.id);
     
     return Scaffold(
       backgroundColor: background,
@@ -1470,7 +2333,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                     'Now Playing',
                     style: TextStyle(color: textSecondary, fontSize: 14, fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(width: 48),
+                  IconButton(
+                    icon: const Icon(Icons.more_vert, size: 28),
+                    color: textPrimary,
+                    onPressed: () {},
+                  ),
                 ],
               ),
             ),
@@ -1479,7 +2346,20 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                 child: Column(
                   children: [
                     const SizedBox(height: 20),
-                    _buildFullPlayerAlbumArt(song),
+                    Stack(
+                      children: [
+                        _buildFullPlayerAlbumArt(song),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: IconButton(
+                            icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 32),
+                            color: isLiked ? Colors.red : textSecondary,
+                            onPressed: () => _toggleLike(song),
+                          ),
+                        ),
+                      ],
+                    ),
                     _buildFullPlayerSongInfo(song),
                     _buildDesktopProgressSection(),
                     const SizedBox(height: 20),
@@ -1521,17 +2401,17 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       height: 280,
       decoration: BoxDecoration(
         color: surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: accent.withValues(alpha: 0.2),
-            blurRadius: 30,
-            offset: const Offset(0, 15),
+            color: accent.withValues(alpha: 0.3),
+            blurRadius: 40,
+            offset: const Offset(0, 20),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         child: song.imageUrl.isNotEmpty
             ? Image.network(song.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.music_note, color: accent, size: 100))
             : const Icon(Icons.music_note, color: accent, size: 100),
@@ -1571,26 +2451,21 @@ class JioSaavnApi {
   static const String _proxyUrl = 'https://sri-keyan-music-player.onrender.com';
 
   static String getProxyUrl(String audioUrl) {
-    // Use proxy to avoid CORS issues
     return '$_proxyUrl/proxy?url=${Uri.encodeComponent(audioUrl)}';
   }
 
   static Future<List<Song>> getHome({String? singer}) async {
-    String query = singer != null && singer.isNotEmpty 
-        ? '$singer tamil songs'
-        : 'tamil songs';
-    
     try {
-      final response = await http.get(
-        Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(query)}'),
-      ).timeout(const Duration(seconds: 15));
+      final query = singer ?? 'tamil songs';
+      final response = await http.get(Uri.parse('$_apiUrl/result/?query=$query'));
       
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((item) => Song.fromJson(item)).toList();
+        final data = jsonDecode(response.body);
+        final songsJson = data['results'] as List? ?? [];
+        return songsJson.map((json) => Song.fromJson(json)).toList();
       }
     } catch (e) {
-      debugPrint('Error fetching home: $e');
+      debugPrint('API Error: $e');
     }
     return [];
   }
@@ -1599,19 +2474,32 @@ class JioSaavnApi {
     try {
       final response = await http.get(
         Uri.parse('$_apiUrl/result/?query=${Uri.encodeComponent(query)}'),
-      ).timeout(const Duration(seconds: 15));
+      );
       
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        return data.map((item) => Song.fromJson(item)).toList();
+        final data = jsonDecode(response.body);
+        final songsJson = data['results'] as List? ?? [];
+        return songsJson.map((json) => Song.fromJson(json)).toList();
       }
     } catch (e) {
-      debugPrint('Error searching: $e');
+      debugPrint('Search Error: $e');
     }
     return [];
   }
 
   static Future<String> getLyrics(String songId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_apiUrl/lyrics/?id=$songId'),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['lyrics'] ?? '';
+      }
+    } catch (e) {
+      debugPrint('Lyrics Error: $e');
+    }
     return '';
   }
 }
