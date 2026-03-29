@@ -3344,7 +3344,12 @@ class JioSaavnApi {
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final songsJson = data['results'] as List? ?? [];
+        List<dynamic> songsJson = [];
+        if (data is List) {
+          songsJson = data;
+        } else if (data is Map && data.containsKey('results')) {
+          songsJson = data['results'] as List? ?? [];
+        }
         return songsJson.map((json) => Song.fromJson(json)).toList();
       }
     } catch (e) {
@@ -3362,7 +3367,12 @@ class JioSaavnApi {
       
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final songsJson = data['results'] as List? ?? [];
+        List<dynamic> songsJson = [];
+        if (data is List) {
+          songsJson = data;
+        } else if (data is Map && data.containsKey('results')) {
+          songsJson = data['results'] as List? ?? [];
+        }
         return songsJson.map((json) => Song.fromJson(json)).toList();
       }
     } catch (e) {
