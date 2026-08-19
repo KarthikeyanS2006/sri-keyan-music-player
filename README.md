@@ -13,7 +13,17 @@ Developed by **[Karthikeyan S](https://github.com/KarthikeyanS2006)**
 
 ### Android APK
 
-The APK is automatically built on every push to `master` via GitHub Actions.
+[![APK Build](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml/badge.svg)](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)
+
+**Latest APK: [`keyan-music-release-apk`](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
+
+| Density | Size |
+|---------|------|
+| mdpi | 48 x 48 px |
+| hdpi | 72 x 72 px |
+| xhdpi | 96 x 96 px |
+| xxhdpi | 144 x 144 px |
+| xxxhdpi | 192 x 192 px |
 
 1. Go to **[Actions > Build Android APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
 2. Click the latest successful workflow run (green checkmark)
@@ -22,6 +32,8 @@ The APK is automatically built on every push to `master` via GitHub Actions.
 5. Install the APK (enable "Install from unknown sources" if needed)
 
 ### Live Web App
+
+[![Deploy Web](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/deploy.yml/badge.svg)](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)
 
 **[Launch Web App](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)**
 
