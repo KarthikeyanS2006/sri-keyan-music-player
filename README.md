@@ -5,6 +5,7 @@ A beautiful Tamil music player built with Flutter and MassTamil API.
 ![Sri Keyan](https://img.shields.io/badge/Sri%20Keyan-Music%20Player-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)
 ![Python](https://img.shields.io/badge/Python-3.x-green)
+[![Build APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml/badge.svg)](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)
 
 Developed by **[karthikeyan S](https://github.com/KarthikeyanS2006)**
 
@@ -26,6 +27,20 @@ Developed by **[karthikeyan S](https://github.com/KarthikeyanS2006)**
 | `/album?url=URL` | Get songs from a movie page |
 | `/search?q=QUERY` | Search for movies/songs |
 | `/play?path=PATH` | Get audio URL |
+
+## Download APK
+
+The latest Android APK is automatically built on every push to `master` via GitHub Actions.
+
+**[Download Latest APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
+
+1. Click the link above
+2. Click on the latest successful workflow run
+3. Scroll down to **Artifacts** section
+4. Download `sri-keyan-release-apk`
+5. Install the APK on your Android device
+
+> Note: You may need to enable "Install from unknown sources" in your device settings.
 
 ## Installation
 

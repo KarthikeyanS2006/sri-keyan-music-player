@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Now Playing - Obsidian Sound</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:ital,wght@0,400..700;1,400..700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "primary": "#ffffff",
+                      "secondary": "#c8c6c5",
+                      "tertiary": "#ffffff",
+                      "on-primary-fixed": "#1a1c1c",
+                      "error": "#ffb4ab",
+                      "on-primary-fixed-variant": "#454747",
+                      "surface-variant": "#353535",
+                      "on-tertiary-fixed": "#1a1c1c",
+                      "on-primary": "#2f3131",
+                      "tertiary-fixed": "#e3e2e2",
+                      "error-container": "#93000a",
+                      "on-secondary-fixed": "#1c1b1b",
+                      "primary-fixed": "#e2e2e2",
+                      "secondary-fixed-dim": "#c8c6c5",
+                      "surface": "#131313",
+                      "primary-container": "#e2e2e2",
+                      "outline-variant": "#444748",
+                      "on-surface-variant": "#c4c7c8",
+                      "surface-container": "#1f1f1f",
+                      "secondary-fixed": "#e5e2e1",
+                      "surface-container-lowest": "#0e0e0e",
+                      "on-primary-container": "#636565",
+                      "outline": "#8e9192",
+                      "inverse-on-surface": "#303030",
+                      "on-tertiary-fixed-variant": "#464747",
+                      "inverse-primary": "#5d5f5f",
+                      "surface-bright": "#393939",
+                      "on-error-container": "#ffdad6",
+                      "on-secondary": "#313030",
+                      "on-surface": "#e2e2e2",
+                      "surface-dim": "#131313",
+                      "on-secondary-fixed-variant": "#474646",
+                      "on-background": "#e2e2e2",
+                      "tertiary-fixed-dim": "#c7c6c6",
+                      "on-secondary-container": "#bab8b7",
+                      "primary-fixed-dim": "#c6c6c7",
+                      "surface-container-high": "#2a2a2a",
+                      "on-tertiary": "#2f3131",
+                      "secondary-container": "#4a4949",
+                      "surface-tint": "#c6c6c7",
+                      "on-error": "#690005",
+                      "surface-container-highest": "#353535",
+                      "tertiary-container": "#e3e2e2",
+                      "on-tertiary-container": "#646465",
+                      "background": "#131313",
+                      "inverse-surface": "#e2e2e2",
+                      "surface-container-low": "#1b1b1b"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "md": "16px",
+                      "sm": "8px",
+                      "xxl": "64px",
+                      "xs": "4px",
+                      "gutter": "16px",
+                      "unit": "4px",
+                      "xl": "40px",
+                      "lg": "24px",
+                      "container-margin": "24px"
+              },
+              "fontFamily": {
+                      "label-sm": ["Inter"],
+                      "headline-md": ["Archivo Narrow"],
+                      "headline-lg": ["Archivo Narrow"],
+                      "display-xl": ["Archivo Narrow"],
+                      "headline-lg-mobile": ["Archivo Narrow"],
+                      "body-lg": ["Inter"],
+                      "body-md": ["Inter"],
+                      "label-md": ["Inter"]
+              },
+              "fontSize": {
+                      "label-sm": ["12px", {"lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                      "headline-md": ["24px", {"lineHeight": "28px", "letterSpacing": "0em", "fontWeight": "600"}],
+                      "headline-lg": ["40px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "display-xl": ["72px", {"lineHeight": "72px", "letterSpacing": "-0.04em", "fontWeight": "700"}],
+                      "headline-lg-mobile": ["32px", {"lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "letterSpacing": "0em", "fontWeight": "400"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400"}],
+                      "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}]
+              }
+          }
+        }
+    </script>
+<style>
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #131313; }
+        ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #444748; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-background h-screen w-screen overflow-hidden flex flex-col font-body-md antialiased selection:bg-primary selection:text-background">
+<!-- Atmospheric Shader Background -->
+<div class="absolute inset-0 z-0 pointer-events-none">
+<div class="absolute inset-0 bg-background mix-blend-multiply z-10"></div>
+<div class="w-full h-full opacity-60" style="display:block;">
+<canvas id="shader-canvas-np-bg" style="display:block;width:100%;height:100%"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('shader-canvas-np-bg');
+  function syncSize() {
+    const w = canvas.clientWidth  || 1280;
+    const h = canvas.clientHeight || 720;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width  = w;
+      canvas.height = h;
+    }
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(syncSize).observe(canvas);
+  }
+  syncSize();
+  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  if (!gl) return;
+  const vs = `attribute vec2 a_position;
+varying vec2 v_texCoord;
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+  const fs = `precision highp float;
+uniform float u_time;
+uniform vec2 u_resolution;
+varying vec2 v_texCoord;
+void main() {
+    vec2 uv = v_texCoord;
+    float time = u_time * 0.5;
+    float n = 0.0;
+    vec2 p = uv * 3.0;
+    for(float i = 1.0; i < 4.0; i++) {
+        p += vec2(sin(p.y + time + i), cos(p.x + time - i));
+        n += 1.0 / i * abs(sin(p.x + p.y));
+    }
+    vec3 colorA = vec3(0.05, 0.05, 0.05);
+    vec3 colorB = vec3(0.3, 0.3, 0.3);
+    vec3 colorC = vec3(0.8, 0.8, 0.8);
+    vec3 finalColor = mix(colorA, colorB, n * 0.5);
+    finalColor = mix(finalColor, colorC, pow(n, 4.0) * 0.1);
+    gl_FragColor = vec4(finalColor, 1.0);
+}`;
+  function cs(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    return s;
+  }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const pos = gl.getAttribLocation(prog, 'a_position');
+  gl.enableVertexAttribArray(pos);
+  gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  let mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+  function render(t) {
+    if (typeof ResizeObserver === 'undefined') syncSize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    if (uTime) gl.uniform1f(uTime, t * 0.001);
+    if (uRes) gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+  }
+  render(0);
+})();
+</script>
+</div>
+</div>
+<!-- Contextual Header -->
+<header class="flex justify-between items-center px-gutter h-16 pt-safe z-20 relative w-full max-w-2xl mx-auto">
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors rounded-full hover:bg-surface-container-high/50 backdrop-blur-md active:scale-90" onclick="history.back()">
+<span class="material-symbols-outlined text-[24px]">expand_more</span>
+</button>
+<div class="font-label-sm text-label-sm text-on-surface-variant tracking-widest uppercase opacity-80">
+            Now Playing
+        </div>
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors rounded-full hover:bg-surface-container-high/50 backdrop-blur-md active:scale-90">
+<span class="material-symbols-outlined text-[24px]">more_horiz</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col items-center justify-center p-gutter z-20 relative w-full h-full pb-xl">
+<div class="w-full max-w-[480px] md:bg-surface/40 md:backdrop-blur-2xl md:border md:border-outline-variant/10 md:rounded-[32px] md:p-xl flex flex-col items-center md:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)]">
+<!-- 3D Visualizer / Album Art -->
+<div class="w-full max-w-[320px] aspect-square relative mb-xl rounded-full overflow-hidden shadow-[0_0_80px_rgba(255,255,255,0.05)] border border-surface-container-highest/50 flex items-center justify-center bg-surface-container-lowest">
+<div class="absolute inset-0 rounded-full border border-primary/10 mix-blend-overlay pointer-events-none z-20"></div>
+<div class="absolute inset-0 w-full h-full z-10" style="display:block;">
+<script src="https://ajax.googleapis.com/ajax/libs/threejs/r125/three.min.js"></script>
+<div id="threejs-container-anim10" style="width:100%;height:100%"></div>
+<script>
+(function() {
+  var container = document.getElementById('threejs-container-anim10');
+  var width = container.clientWidth || window.innerWidth;
+  var height = container.clientHeight || window.innerHeight;
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+  var renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(width, height);
+  container.appendChild(renderer.domElement);
+  var geometry = new THREE.IcosahedronGeometry(1.5, 2);
+  var material = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.3 });
+  var sphere = new THREE.Mesh(geometry, material);
+  scene.add(sphere);
+  var coreGeom = new THREE.IcosahedronGeometry(0.8, 1);
+  var coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+  var core = new THREE.Mesh(coreGeom, coreMat);
+  scene.add(core);
+  camera.position.z = 4;
+  function animate() {
+    requestAnimationFrame(animate);
+    var time = Date.now() * 0.001;
+    sphere.rotation.y += 0.005;
+    sphere.rotation.z += 0.002;
+    var scale = 1.0 + Math.sin(time * 4.0) * 0.1;
+    sphere.scale.set(scale, scale, scale);
+    core.rotation.y -= 0.01;
+    var coreScale = 1.0 + Math.cos(time * 4.0) * 0.05;
+    core.scale.set(coreScale, coreScale, coreScale);
+    renderer.render(scene, camera);
+  }
+  function onResize() {
+    var w = container.clientWidth || window.innerWidth;
+    var h = container.clientHeight || window.innerHeight;
+    if (w === 0 || h === 0) return;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+  window.addEventListener('resize', onResize, false);
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(onResize).observe(container);
+  }
+  animate();
+})();
+</script>
+</div>
+<div class="absolute inset-0 rounded-full shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] z-20 pointer-events-none"></div>
+</div>
+<!-- Track Typography -->
+<div class="w-full text-center mb-xl">
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile md:font-headline-lg md:text-headline-lg text-primary mb-xs tracking-tight">Obsidian Echoes</h1>
+<p class="font-body-lg text-body-lg text-secondary opacity-80">Echo Collective</p>
+</div>
+<!-- Progress Bar -->
+<div class="w-full mb-lg">
+<div class="flex justify-between font-label-sm text-label-sm text-on-surface-variant mb-sm px-1 opacity-70">
+<span>1:24</span>
+<span>4:08</span>
+</div>
+<div class="group w-full h-[3px] bg-surface-container-highest rounded-full relative cursor-pointer hover:h-[5px] transition-all duration-300 ease-out">
+<div class="h-full bg-primary w-1/3 absolute left-0 top-0 rounded-full"></div>
+<div class="absolute w-3 h-3 bg-primary rounded-full top-1/2 -translate-y-1/2 left-1/3 -translate-x-1/2 shadow-[0_0_10px_rgba(255,255,255,0.5)] opacity-0 group-hover:opacity-100 scale-50 group-hover:scale-100 transition-all duration-300 ease-out"></div>
+</div>
+</div>
+<!-- Playback Controls -->
+<div class="w-full flex items-center justify-between mb-sm px-sm">
+<button class="text-on-surface-variant hover:text-primary transition-colors opacity-60 hover:opacity-100 p-2 active:scale-90">
+<span class="material-symbols-outlined text-[20px]">shuffle</span>
+</button>
+<div class="flex items-center gap-lg">
+<button class="text-primary hover:text-secondary transition-colors opacity-80 hover:opacity-100 active:scale-90 duration-200">
+<span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+</button>
+<button class="w-20 h-20 bg-primary text-background rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-transform duration-300 shadow-[0_0_30px_rgba(255,255,255,0.15)] group relative">
+<div class="absolute inset-0 rounded-full bg-primary opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
+<span class="material-symbols-outlined text-[36px] relative z-10" style="font-variation-settings: 'FILL' 1;">pause</span>
+</button>
+<button class="text-primary hover:text-secondary transition-colors opacity-80 hover:opacity-100 active:scale-90 duration-200">
+<span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+</button>
+</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors opacity-60 hover:opacity-100 p-2 relative active:scale-90">
+<span class="material-symbols-outlined text-[20px]">repeat</span>
+<div class="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full hidden"></div>
+</button>
+</div>
+<!-- Secondary Actions Footer -->
+<div class="w-full flex justify-between items-center mt-md pt-md border-t border-surface-container-high/30 px-sm">
+<button class="flex items-center gap-xs text-on-surface-variant hover:text-primary transition-colors opacity-70 hover:opacity-100 text-label-sm font-label-sm active:scale-95">
+<span class="material-symbols-outlined text-[18px]">speaker_group</span>
+<span class="hidden md:inline">Connect</span>
+</button>
+<button class="flex items-center gap-xs text-on-surface-variant hover:text-primary transition-colors opacity-70 hover:opacity-100 text-label-sm font-label-sm active:scale-95">
+<span class="material-symbols-outlined text-[18px]">queue_music</span>
+<span class="hidden md:inline">Queue</span>
+</button>
+</div>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>Top Mix - Obsidian Sound</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:ital,wght@0,400..700;1,400..700&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary": "#ffffff",
+                        "secondary": "#c8c6c5",
+                        "tertiary": "#ffffff",
+                        "on-primary-fixed": "#1a1c1c",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#454747",
+                        "surface-variant": "#353535",
+                        "on-tertiary-fixed": "#1a1c1c",
+                        "on-primary": "#2f3131",
+                        "tertiary-fixed": "#e3e2e2",
+                        "error-container": "#93000a",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "primary-fixed": "#e2e2e2",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "surface": "#131313",
+                        "primary-container": "#e2e2e2",
+                        "outline-variant": "#444748",
+                        "on-surface-variant": "#c4c7c8",
+                        "surface-container": "#1f1f1f",
+                        "secondary-fixed": "#e5e2e1",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary-container": "#636565",
+                        "outline": "#8e9192",
+                        "inverse-on-surface": "#303030",
+                        "on-tertiary-fixed-variant": "#464747",
+                        "inverse-primary": "#5d5f5f",
+                        "surface-bright": "#393939",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary": "#313030",
+                        "on-surface": "#e2e2e2",
+                        "surface-dim": "#131313",
+                        "on-secondary-fixed-variant": "#474646",
+                        "on-background": "#e2e2e2",
+                        "tertiary-fixed-dim": "#c7c6c6",
+                        "on-secondary-container": "#bab8b7",
+                        "primary-fixed-dim": "#c6c6c7",
+                        "surface-container-high": "#2a2a2a",
+                        "on-tertiary": "#2f3131",
+                        "secondary-container": "#4a4949",
+                        "surface-tint": "#c6c6c7",
+                        "on-error": "#690005",
+                        "surface-container-highest": "#353535",
+                        "tertiary-container": "#e3e2e2",
+                        "on-tertiary-container": "#646465",
+                        "background": "#131313",
+                        "inverse-surface": "#e2e2e2",
+                        "surface-container-low": "#1b1b1b"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "md": "16px",
+                        "sm": "8px",
+                        "xxl": "64px",
+                        "xs": "4px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "xl": "40px",
+                        "lg": "24px",
+                        "container-margin": "24px"
+                    },
+                    "fontFamily": {
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Archivo Narrow"],
+                        "headline-lg": ["Archivo Narrow"],
+                        "display-xl": ["Archivo Narrow"],
+                        "headline-lg-mobile": ["Archivo Narrow"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-sm": ["12px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "28px", "letterSpacing": "0em", "fontWeight": "600" }],
+                        "headline-lg": ["40px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "display-xl": ["72px", { "lineHeight": "72px", "letterSpacing": "-0.04em", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["32px", { "lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "letterSpacing": "0em", "fontWeight": "400" }],
+                        "label-md": ["14px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #131313;
+            color: #e2e2e2;
+        }
+        .track-item:hover, .track-item:active {
+            background-color: #121212;
+        }
+        .track-item:hover .track-play-icon, .track-item:active .track-play-icon {
+            opacity: 1;
+        }
+        .track-item:hover .track-number, .track-item:active .track-number {
+            opacity: 0;
+        }
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="antialiased min-h-screen flex flex-col font-body-md text-on-surface">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/60 backdrop-blur-xl border-b border-outline-variant/10">
+<div class="flex justify-between items-center px-gutter h-16">
+<div class="flex items-center gap-md">
+<button class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 active:opacity-80" onclick="history.back()">
+<span class="material-symbols-outlined text-on-surface-variant">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md tracking-tighter text-primary">Obsidian Sound</h1>
+</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors active:opacity-80">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span>
+</button>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow pt-16 pb-40">
+<!-- Playlist Header -->
+<section class="relative w-full h-[442px] min-h-[400px] flex flex-col justify-end p-container-margin">
+<div class="absolute inset-0 z-0">
+<img alt="Dark Ambient Mix Header" class="w-full h-full object-cover opacity-60" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB6B1PZipqZO64oEUCiqOlrwJqxv4dFHZ-qr3Qzj417qqG2qUOYu10who36NFM_O-_BOKYrSc1IEkkfumftUGtOyDI8BCeldXYu-S-BDwnyCBCDbEI9reBMzDwP7V7WxJ24gisD6pWPF0MC6ybG159ty7biNpIMQnJcS_HY3_ydILlwQbO3GXvGDF72KtxrYIghAJvqO3hLIv1AdOy0Js_EbPonB8ciRuzu7cMXxfYcEiXh_CcfvI6l"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent"></div>
+</div>
+<div class="relative z-10 max-w-5xl mx-auto w-full flex flex-col md:flex-row md:items-end gap-lg">
+<div class="flex-grow">
+<p class="font-label-md text-label-md text-secondary uppercase tracking-widest mb-sm">Top Mix</p>
+<h2 class="font-display-xl text-display-xl text-primary mb-md">Dark Ambient Mix</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mb-lg">An immersive journey through void-like soundscapes and industrial echoes. Curated for deep focus and introspection.</p>
+<div class="flex items-center gap-md">
+<button class="bg-primary text-background font-label-md text-label-md px-lg py-md flex items-center gap-sm hover:bg-secondary transition-colors active:scale-95">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                            PLAY MIX
+                        </button>
+<button class="border border-outline-variant text-primary w-12 h-12 flex items-center justify-center hover:border-primary hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">favorite</span>
+</button>
+<button class="border border-outline-variant text-primary w-12 h-12 flex items-center justify-center hover:border-primary hover:bg-surface-variant transition-colors active:scale-95">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Track List -->
+<section class="max-w-5xl mx-auto w-full px-container-margin mt-lg">
+<div class="flex border-b border-outline-variant/30 pb-sm mb-md font-label-md text-label-md text-on-surface-variant px-md hidden md:flex">
+<div class="w-12 text-center">#</div>
+<div class="flex-grow">TITLE</div>
+<div class="w-24 text-right">DURATION</div>
+</div>
+<div class="flex flex-col gap-xs">
+<!-- Track Items (Generated 15) -->
+<script>
+                    const tracks = [
+                        { title: "Void Resonance", artist: "Architects of Silence", duration: "6:42" },
+                        { title: "Monolith", artist: "Substratum", duration: "5:18" },
+                        { title: "Concrete Echo", artist: "Brutalist Soundscapes", duration: "7:05" },
+                        { title: "Obsidian Shards", artist: "Klang", duration: "4:55" },
+                        { title: "Null Space", artist: "Architects of Silence", duration: "8:20" },
+                        { title: "Abyssal Plain", artist: "Deep Drone", duration: "6:15" },
+                        { title: "Static Horizon", artist: "White Noise Syndicate", duration: "5:40" },
+                        { title: "Industrial Decay", artist: "Substratum", duration: "7:33" },
+                        { title: "Fractured Glass", artist: "Klang", duration: "4:12" },
+                        { title: "Shadow Geometry", artist: "Brutalist Soundscapes", duration: "6:50" },
+                        { title: "Tonal Void", artist: "Deep Drone", duration: "5:55" },
+                        { title: "Echo Chamber", artist: "White Noise Syndicate", duration: "6:30" },
+                        { title: "Metallic Hum", artist: "Substratum", duration: "5:08" },
+                        { title: "Absolute Zero", artist: "Architects of Silence", duration: "8:45" },
+                        { title: "End Transmission", artist: "Klang", duration: "3:58" }
+                    ];
+
+                    tracks.forEach((track, index) => {
+                        document.write(`
+                            <div class="track-item flex items-center p-md group cursor-pointer transition-colors border-b border-outline-variant/10 last:border-0 relative">
+                                <div class="w-12 text-center text-on-surface-variant relative flex items-center justify-center">
+                                    <span class="track-number group-hover:opacity-0 group-active:opacity-0 transition-opacity font-label-md text-label-md">${index + 1}</span>
+                                    <span class="track-play-icon material-symbols-outlined absolute opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity text-primary" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+                                </div>
+                                <div class="flex-grow flex flex-col pl-sm">
+                                    <span class="font-body-md text-body-md text-primary group-hover:text-primary transition-colors">${track.title}</span>
+                                    <span class="font-label-sm text-label-sm text-on-surface-variant mt-xs">${track.artist}</span>
+                                </div>
+                                <div class="w-24 text-right font-label-md text-label-md text-on-surface-variant hidden sm:block">
+                                    ${track.duration}
+                                </div>
+                                <button class="ml-sm opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-opacity text-on-surface-variant hover:text-primary">
+                                    <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">more_horiz</span>
+                                </button>
+                            </div>
+                        `);
+                    });
+                </script>
+</div>
+</section>
+</main>
+<!-- Mini Player -->
+<div class="fixed bottom-20 w-full z-40 px-gutter hidden md:block">
+<div class="max-w-5xl mx-auto bg-surface-container/90 backdrop-blur-md border border-outline-variant/20 p-sm flex items-center justify-between shadow-2xl">
+<div class="flex items-center gap-md">
+<div class="w-12 h-12 bg-surface-variant">
+<img alt="Currently playing album art" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVo35_KbAaMIPsCp37DINE_PR96pHh0QODxMURstaiDQz2pXIrKj2YxNhIZ14DgaUYlk8cTlCOS9G5eWX1WiilI0f_Xg_92MXyWNhpTksIrCOzEqin3vLx4qOlSy-mCz8URjOQjRfKzXkdQ_M8KGIsFAE8dJXVlm5yqr3jUY4MpW3CnV7QlX-78sjJfWux0o-jiA_n7cjd_dw8M4WsmA2DrQB9BG3REHMynrGlYkxPZkj-On2sz7eA"/>
+</div>
+<div>
+<div class="font-label-md text-label-md text-primary">Void Resonance</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant">Architects of Silence</div>
+</div>
+</div>
+<div class="flex flex-col items-center flex-grow max-w-lg mx-lg">
+<div class="flex items-center gap-md mb-xs">
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">skip_previous</span></button>
+<button class="w-10 h-10 bg-primary text-background rounded-full flex items-center justify-center hover:scale-105 transition-transform"><span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">skip_next</span></button>
+</div>
+<div class="w-full flex items-center gap-sm">
+<span class="font-label-sm text-label-sm text-on-surface-variant text-[10px]">1:24</span>
+<div class="flex-grow h-[2px] bg-surface-variant relative cursor-pointer">
+<div class="absolute left-0 top-0 h-full bg-primary w-1/3"></div>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant text-[10px]">6:42</span>
+</div>
+</div>
+<div class="flex items-center gap-md w-48 justify-end">
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">volume_up</span></button>
+<div class="w-24 h-[2px] bg-surface-variant relative cursor-pointer">
+<div class="absolute left-0 top-0 h-full bg-primary w-2/3"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 bg-surface/60 backdrop-blur-xl border-t border-outline-variant/10 md:hidden">
+<div class="flex justify-around items-center h-20 pb-safe">
+<button class="flex flex-col items-center justify-center text-primary active:scale-95 transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-label-sm mt-xs">Home</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-colors active:scale-95 transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">search</span>
+<span class="font-label-sm text-label-sm mt-xs">Search</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary transition-colors active:scale-95 transition-transform">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">library_music</span>
+<span class="font-label-sm text-label-sm mt-xs">Library</span>
+</button>
+</div>
+</nav>
+</body></html>
