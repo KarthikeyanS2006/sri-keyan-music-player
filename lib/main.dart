@@ -1990,6 +1990,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             }
           }
         }
+        if (_selectedGenres.isNotEmpty && !query.contains(RegExp(r'songs|music|hits|trending'))) {
+          final randomGenre = _selectedGenres[DateTime.now().millisecond % _selectedGenres.length];
+          queries.add('$randomGenre $query');
+        }
         
         final results = await Future.wait(queries.map((q) => JioSaavnApi.search(q)));
         if (!mounted) return;

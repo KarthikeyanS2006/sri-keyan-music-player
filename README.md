@@ -1,108 +1,95 @@
-# Sri Keyan - Tamil Music Player
+# Sri Keyan - Music Player
 
-A beautiful Tamil music player built with Flutter and MassTamil API.
+AI-powered music player built with Flutter. Stream Tamil music with personalized recommendations.
 
-![Sri Keyan](https://img.shields.io/badge/Sri%20Keyan-Music%20Player-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)
-![Python](https://img.shields.io/badge/Python-3.x-green)
 [![Build APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml/badge.svg)](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)
+[![Deploy Web](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/deploy.yml/badge.svg)](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)
 
-Developed by **[karthikeyan S](https://github.com/KarthikeyanS2006)**
+Developed by **[Karthikeyan S](https://github.com/KarthikeyanS2006)**
+
+## Download
+
+### Android APK
+
+The APK is automatically built on every push to `master` via GitHub Actions.
+
+1. Go to **[Actions > Build Android APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
+2. Click the latest successful workflow run (green checkmark)
+3. Scroll down to **Artifacts**
+4. Download **`sri-keyan-release-apk`**
+5. Install the APK (enable "Install from unknown sources" if needed)
+
+### Live Web App
+
+**[Launch Web App](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)**
+
+Auto-deploys to GitHub Pages on every push.
 
 ## Features
 
-- **Beautiful UI** - Dark navy blue theme with smooth animations
-- **Movie Grid** - Browse latest Tamil movies with posters
-- **Direct Streaming** - Play songs directly from MassTamil
-- **Search** - Search for any Tamil movie or song
-- **Mini Player** - Quick access to now playing
-- **Full Player** - Complete music experience with controls
-- **Responsive** - Works on mobile, tablet, and desktop
+- **AI Recommendations** - Smart song suggestions based on your listening history, liked songs, preferred artists and languages
+- **Library** - Create and manage playlists, view recently played, liked songs with quick play
+- **Personalized Home** - Discover Mix, "Because You Like", "Fans Also Like", and taste profile stats
+- **Full Player** - Album art, seekable progress bar, lyrics, song details, repeat modes
+- **Mini Player** - Quick controls without leaving your current screen
+- **Search** - Fast debounced search with cached results
+- **Keyboard Shortcuts** - Space (play/pause), arrows (next/prev), Ctrl+K (search)
+- **Theme** - Dark/Light/System theme with black & white design
+- **Responsive** - Adapts to phone, tablet, desktop, and TV layouts
+- **Stats Dashboard** - Total listening time, songs played, listening streak, top artists
+- **Share & Download** - Share songs or download for offline
 
-## API Endpoints
+## Tech Stack
 
-| Endpoint | Description |
-|----------|-------------|
-| `/latest` | Get latest Tamil movies |
-| `/album?url=URL` | Get songs from a movie page |
-| `/search?q=QUERY` | Search for movies/songs |
-| `/play?path=PATH` | Get audio URL |
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Flutter (Web + Android) |
+| Music API | JioSaavn (via saavnapi.vercel.app) |
+| Audio | just_audio |
+| State | setState + RecommendationEngine |
+| CI/CD | GitHub Actions |
+| Hosting | GitHub Pages (web), Artifacts (APK) |
 
-## Download APK
+## Project Structure
 
-The latest Android APK is automatically built on every push to `master` via GitHub Actions.
-
-**[Download Latest APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
-
-1. Click the link above
-2. Click on the latest successful workflow run
-3. Scroll down to **Artifacts** section
-4. Download `sri-keyan-release-apk`
-5. Install the APK on your Android device
-
-> Note: You may need to enable "Install from unknown sources" in your device settings.
-
-## Installation
-
-### Backend Setup
-
-```bash
-# Install dependencies
-pip install flask flask-cors requests beautifulsoup4
-
-# Run the server
-python music_server.py
+```
+sri-keyan-music-player/
+├── lib/main.dart              # Single-file Flutter app
+├── .github/workflows/
+│   ├── android.yml            # APK build workflow
+│   └── deploy.yml             # Web deploy workflow
+├── web/index.html             # Web entry point
+├── music_server.py            # JioSaavn API proxy (Flask)
+├── music-api/                 # YouTube Music API (FastAPI)
+└── pubspec.yaml               # Flutter dependencies
 ```
 
-The server will start at `http://localhost:5000`
-
-### Flutter App Setup
+## Run Locally
 
 ```bash
 # Get dependencies
 flutter pub get
 
-# Run locally
+# Run on web
 flutter run -d chrome
+
+# Build for web
+flutter build web --release --base-href /sri-keyan-music-player/
+
+# Build APK
+flutter build apk --release
 ```
 
-## Deployment
+## How It Works
 
-### Backend (Render)
+1. **Onboarding** - Select preferred singers and languages on first launch
+2. **Home** - See personalized recommendations, trending songs, and your taste profile
+3. **Search** - Find any song with instant results
+4. **Library** - Organize playlists, view liked songs and recently played
+5. **Settings** - Change theme, view stats, manage preferences
+6. **Play** - Full playback controls with seek, repeat, share, and download
 
-1. Go to [render.com](https://render.com)
-2. Create new Web Service
-3. Connect your GitHub repo
-4. Set:
-   - Build Command: `pip install -r requirements.txt`
-   - Start Command: `gunicorn music_server:app --timeout 120`
-
-### Flutter Web
-
-The app auto-deploys to GitHub Pages on every push.
-
-## Tech Stack
-
-- **Frontend**: Flutter Web
-- **Backend**: Python Flask
-- **API Source**: MassTamil.dev
-- **Audio CDN**: MassTamil.download
-
-## Project Structure
-
-```
-test_app/
-├── lib/
-│   └── main.dart          # Flutter app
-├── music_server.py        # Python API server
-├── requirements.txt       # Python dependencies
-└── web/                   # Flutter web files
-```
-
-## Connect With Me
+## Connect
 
 - **GitHub**: [KarthikeyanS2006](https://github.com/KarthikeyanS2006)
-
-## Disclaimer
-
-This project is for educational purposes. Music content is sourced from MassTamil.dev. Use responsibly and respect copyright.
+- **Live**: [sri-keyan-music-player](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)
