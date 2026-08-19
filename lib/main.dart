@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
@@ -1563,6 +1564,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   bool _isLandscape = false;
   int _bottomNavIndex = 0;
   bool _sidebarExpanded = true;
+  bool _showDownloadBanner = true;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get accent => _isDark ? AppTheme.accent : AppTheme.accentLight;
@@ -3216,7 +3218,106 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             final isSelected = entry.key == _currentIndex;
             return _buildSongCard(song, isSelected, entry.key);
           }),
+          if (kIsWeb && _showDownloadBanner) ...[
+            const SizedBox(height: 24),
+            _buildDownloadBanner(),
+          ],
+          const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDownloadBanner() {
+    return AnimatedOpacity(
+      opacity: _showDownloadBanner ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 300),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [accent.withValues(alpha: 0.15), accent.withValues(alpha: 0.05)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withValues(alpha: 0.2), width: 1),
+        ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.phone_android_rounded, color: accent, size: 28),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Download Keyan Music',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Get the Android APK for the best experience',
+                          style: TextStyle(fontSize: 13, color: textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final url = Uri.parse('https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml');
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    icon: const Icon(Icons.download_rounded, size: 18),
+                    label: const Text('Get APK'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: () => setState(() => _showDownloadBanner = false),
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: textSecondary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.close_rounded, size: 16, color: textSecondary),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
