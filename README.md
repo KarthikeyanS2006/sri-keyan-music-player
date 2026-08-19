@@ -1,6 +1,8 @@
-# Sri Keyan - Music Player
+# Keyan Music - Tamil Music Player
 
 AI-powered music player built with Flutter. Stream Tamil music with personalized recommendations.
+
+A product of **Sri Keyan Developments**
 
 [![Build APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml/badge.svg)](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)
 [![Deploy Web](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/deploy.yml/badge.svg)](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)
@@ -16,7 +18,7 @@ The APK is automatically built on every push to `master` via GitHub Actions.
 1. Go to **[Actions > Build Android APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
 2. Click the latest successful workflow run (green checkmark)
 3. Scroll down to **Artifacts**
-4. Download **`sri-keyan-release-apk`**
+4. Download **`keyan-music-release-apk`**
 5. Install the APK (enable "Install from unknown sources" if needed)
 
 ### Live Web App
@@ -92,4 +94,12 @@ flutter build apk --release
 ## Connect
 
 - **GitHub**: [KarthikeyanS2006](https://github.com/KarthikeyanS2006)
-- **Live**: [sri-keyan-music-player](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)
+- **Live**: [Keyan Music](https://KarthikeyanS2006.github.io/sri-keyan-music-player/)
+
+## Disclaimer
+
+This project is for educational purposes. Music content is sourced from JioSaavn. Use responsibly and respect copyright.
+
+---
+
+**Part of Sri Keyan Developments**

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.test_app"
+    namespace = "com.srikeyan.music"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.test_app"
+        applicationId = "com.srikeyan.music"
         minSdk = 24
         targetSdk = 36
         versionCode = flutter.versionCode

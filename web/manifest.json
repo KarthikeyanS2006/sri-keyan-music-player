@@ -1,11 +1,11 @@
 {
-    "name": "test_app",
-    "short_name": "test_app",
+    "name": "Keyan Music",
+    "short_name": "Keyan Music",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Keyan Music - AI-Powered Tamil Music Player by Sri Keyan Developments",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

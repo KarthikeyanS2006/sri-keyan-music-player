@@ -2758,8 +2758,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             _buildSettingsTile(
               icon: Icons.info_outline,
               title: 'About',
-              subtitle: 'Sri Keyan Music Player v1.0',
-              onTap: () {},
+              subtitle: 'Keyan Music Player v1.0',
+              onTap: () => _showAboutDialog(context),
             ),
             const Spacer(),
             Center(
@@ -2769,7 +2769,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                   const SizedBox(height: 8),
                   Text('Sri Keyan Music', style: TextStyle(color: textSecondary, fontSize: 14)),
                   const SizedBox(height: 4),
-                  Text('Made with love', style: TextStyle(color: textSecondary, fontSize: 12)),
+                  Text('Part of Sri Keyan Developments', style: TextStyle(color: textSecondary, fontSize: 11)),
                 ],
               ),
             ),
@@ -2822,6 +2822,52 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showAboutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: surfaceLight,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.music_note_rounded, size: 40, color: accent),
+            ),
+            const SizedBox(height: 16),
+            Text('Keyan Music', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textPrimary)),
+            const SizedBox(height: 4),
+            Text('v1.0.0', style: TextStyle(fontSize: 14, color: textSecondary)),
+            const SizedBox(height: 12),
+            Text('AI-Powered Tamil Music Player', style: TextStyle(fontSize: 13, color: textSecondary)),
+            const SizedBox(height: 16),
+            Divider(color: textSecondary.withValues(alpha: 0.2)),
+            const SizedBox(height: 8),
+            Text('A product of', style: TextStyle(fontSize: 12, color: textSecondary)),
+            const SizedBox(height: 4),
+            Text('Sri Keyan Developments', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: accent)),
+            const SizedBox(height: 16),
+            Text('Developed by Karthikeyan S', style: TextStyle(fontSize: 12, color: textSecondary)),
+            const SizedBox(height: 4),
+            Text('github.com/KarthikeyanS2006', style: TextStyle(fontSize: 11, color: textSecondary)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: TextStyle(color: accent)),
+          ),
+        ],
       ),
     );
   }
@@ -4216,8 +4262,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           _buildSettingsTile(
             icon: Icons.info_outline,
             title: 'About',
-            subtitle: 'Sri Keyan Music Player v1.0',
-            onTap: () {},
+            subtitle: 'Keyan Music Player v1.0',
+            onTap: () => _showAboutDialog(context),
           ),
         ],
       ),
