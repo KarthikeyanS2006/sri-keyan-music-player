@@ -6,6 +6,9 @@ on:
       - master
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -39,8 +42,74 @@ jobs:
         run: flutter build apk --release
 
       - name: Upload APK Artifact
+        id: upload-apk
         uses: actions/upload-artifact@v4
         with:
           name: keyan-music-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      - name: Get APK size
+        id: apk-size
+        run: |
+          SIZE=$(stat --printf="%s" build/app/outputs/flutter-apk/app-release.apk)
+          SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
+          echo "size=${SIZE_MB} MB" >> "$GITHUB_OUTPUT"
+
+      - name: Update README with APK link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const readme = fs.readFileSync('README.md', 'utf8');
+
+            const runId = context.runId;
+            const repo = context.repo.owner + '/' + context.repo.repo;
+            const artifactUrl = `https://github.com/${repo}/actions/runs/${runId}/artifacts/${context.payload.workflow_run ? 'latest' : '${{ steps.upload-apk.outputs.artifact-id }}'}`;
+            const artifactId = '${{ steps.upload-apk.outputs.artifact-id }}';
+            const apkSize = '${{ steps.apk-size.outputs.size }}';
+            const buildDate = new Date().toISOString().split('T')[0];
+            const shortSha = context.sha.substring(0, 7);
+            const workflowUrl = `https://github.com/${repo}/actions/workflows/android.yml`;
+
+            const directLink = `https://github.com/${repo}/actions/runs/${runId}/artifacts/${artifactId}`;
+
+            // Build the new download section
+            const newDownloadSection = `### Android APK
+
+[![APK Build](https://github.com/${repo}/actions/workflows/android.yml/badge.svg)](${workflowUrl})
+
+| | |
+|---|---|
+| **Latest APK** | [\`keyan-music-release-apk\`](${directLink}) |
+| **Size** | ${apkSize} |
+| **Built** | ${buildDate} |
+| **Commit** | [\`${shortSha}\`](https://github.com/${repo}/commit/${context.sha}) |
+| **Workflow** | [Run #${runId}](${workflowUrl}) |
+
+#### How to Install
+1. Click **[\`keyan-music-release-apk\`](${directLink})** above
+2. Click the **download icon** (arrow) on the artifact page
+3. Open the downloaded APK and enable **Install from unknown sources**
+4. Install and enjoy!
+
+> **Note:** Artifact links are available for **90 days** after the build.`;
+
+            // Replace the download section in README
+            const downloadRegex = /### Android APK\n[\s\S]*?(?=### Live Web App)/;
+            const updated = readme.replace(downloadRegex, newDownloadSection + '\n\n');
+
+            if (updated !== readme) {
+              fs.writeFileSync('README.md', updated);
+              console.log('README updated with APK artifact link');
+            } else {
+              console.log('README already up to date');
+            }
+
+      - name: Commit updated README
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --staged --quiet || git commit -m "docs: update README with APK artifact [skip ci]"
+          git push
