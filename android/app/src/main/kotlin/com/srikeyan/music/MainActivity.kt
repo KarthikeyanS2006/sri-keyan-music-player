@@ -78,7 +78,7 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val permission = Manifest.permission.POST_NOTIFICATIONS
             if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(permission), PERMISSION_REQUEST_CODE)
+                requestPermissions(arrayOf(permission), PERMISSION_REQUEST_CODE)
             }
         }
     }
@@ -92,7 +92,7 @@ class MainActivity : FlutterActivity() {
             permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
         if (permissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE + 1)
+            requestPermissions(permissions.toTypedArray(), PERMISSION_REQUEST_CODE + 1)
         }
     }
 
