@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show ImageFilter;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase/supabase.dart';
 import 'package:uuid/uuid.dart';
@@ -1891,7 +1892,7 @@ class MusicPlayerScreen extends StatefulWidget {
 enum RepeatMode { off, one, all }
 
 class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
-  AudioPlayer _audioPlayer = AudioPlayer();
+  late AudioPlayer _audioPlayer;
   late final AudioPlayerHandler _audioHandler = widget.audioHandler;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
@@ -2762,23 +2763,30 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   }
 
   Widget _buildBottomNavBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: surface,
-        border: Border(top: BorderSide(color: textSecondary.withValues(alpha: 0.1), width: 0.5)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildNavItem(0, Icons.home_rounded, 'Home'),
-              _buildNavItem(1, Icons.search_rounded, 'Search'),
-              _buildNavItem(2, Icons.library_music_rounded, 'Library'),
-              _buildNavItem(3, Icons.settings_rounded, 'Settings'),
-            ],
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _isDark
+                ? Colors.white.withValues(alpha: 0.04)
+                : Colors.white.withValues(alpha: 0.7),
+            border: Border(top: BorderSide(color: textSecondary.withValues(alpha: 0.08), width: 0.5)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildNavItem(0, Icons.home_rounded, 'Home'),
+                  _buildNavItem(1, Icons.search_rounded, 'Search'),
+                  _buildNavItem(2, Icons.library_music_rounded, 'Library'),
+                  _buildNavItem(3, Icons.settings_rounded, 'Settings'),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -4480,13 +4488,31 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     
     return GestureDetector(
       onTap: () => setState(() => _showFullPlayer = true),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFF111111),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: _isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.white.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.05),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: _isDark ? 0.3 : 0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
@@ -4588,6 +4614,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               ),
             ),
           ],
+        ),
+      ),
         ),
       ),
     );
