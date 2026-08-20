@@ -2300,16 +2300,35 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
     try {
       final downloadUrl = JioSaavnApi.getPlayableUrls(song.audioUrl).first;
-      final response = await http.get(Uri.parse(downloadUrl)).timeout(const Duration(seconds: 30));
+      final response = await http.get(Uri.parse(downloadUrl)).timeout(const Duration(seconds: 60));
 
       if (response.statusCode != 200) {
         throw Exception('Download failed with status ${response.statusCode}');
       }
 
-      final dir = await getApplicationDocumentsDirectory();
+      final tempDir = await getTemporaryDirectory();
       final fileName = '${song.artist.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_')} - ${song.title.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_')}.mp3';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(response.bodyBytes);
+      final tempFile = File('${tempDir.path}/$fileName');
+      await tempFile.writeAsBytes(response.bodyBytes);
+
+      if (kIsWeb) {
+        if (mounted) {
+          setState(() {
+            _downloadedSongIds.add(song.id);
+            _downloadingSongId = null;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Downloaded: ${song.title}')),
+          );
+        }
+        return;
+      }
+
+      const channel = MethodChannel('com.srikeyan.music/downloads');
+      final savedPath = await channel.invokeMethod<String>('saveToDownloads', {
+        'filePath': tempFile.path,
+        'fileName': fileName,
+      });
 
       if (mounted) {
         setState(() {
@@ -2318,8 +2337,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Downloaded: ${song.title}'),
-            duration: const Duration(seconds: 2),
+            content: Text('Saved to Downloads/Keyan Music: $fileName'),
+            duration: const Duration(seconds: 3),
           ),
         );
       }
