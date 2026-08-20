@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase/supabase.dart';
 import 'package:uuid/uuid.dart';
+import 'audio_handler.dart';
 
 class ThemeController extends ValueNotifier<ThemeMode> {
   ThemeController() : super(ThemeMode.system) {
@@ -97,7 +98,8 @@ void main() async {
   } catch (e) {
     debugPrint('Supabase init failed (app will work offline): $e');
   }
-  runApp(const MusicApp());
+  final audioHandler = await AudioPlayerHandler.init();
+  runApp(MusicApp(audioHandler: audioHandler));
 }
 
 class SupabaseManager {
@@ -220,7 +222,8 @@ class SupabaseManager {
 }
 
 class MusicApp extends StatefulWidget {
-  const MusicApp({super.key});
+  final AudioPlayerHandler audioHandler;
+  const MusicApp({super.key, required this.audioHandler});
 
   @override
   State<MusicApp> createState() => _MusicAppState();
@@ -295,7 +298,7 @@ class _MusicAppState extends State<MusicApp> {
             ? _buildSplashScreen() 
             : _showPreferences 
                 ? _buildPreferencesScreen() 
-                : const MusicPlayerScreen(),
+                : MusicPlayerScreen(audioHandler: widget.audioHandler),
       ),
     );
   }
@@ -343,7 +346,14 @@ class _MusicAppState extends State<MusicApp> {
                           color: const Color(0xFF040404),
                         ),
                       ),
-                      Icon(Icons.music_note, color: Colors.white.withValues(alpha: 0.9), size: 36),
+                      ClipOval(
+                        child: Image.asset(
+                          'assets/logo.png',
+                          width: 92,
+                          height: 92,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -672,6 +682,11 @@ class Song {
   final String language;
   final SongMood mood;
 
+  double valence;
+  double energy;
+  double tempo;
+  double acousticness;
+
   Song({
     required this.id,
     required this.title,
@@ -684,6 +699,10 @@ class Song {
     this.year = '',
     this.language = 'Tamil',
     this.mood = SongMood.chill,
+    this.valence = 0.5,
+    this.energy = 0.5,
+    this.tempo = 120.0,
+    this.acousticness = 0.3,
   });
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -728,7 +747,23 @@ class Song {
     String artist = toStringVal(json['primary_artists'] ?? json['singers'] ?? json['artist']);
     if (artist.isEmpty) artist = 'Unknown Artist';
     if (artist.startsWith('{')) artist = 'Unknown Artist';
-    
+
+    double valence = 0.5;
+    double energy = 0.5;
+    double tempo = 120.0;
+    double acousticness = 0.3;
+    if (mood == SongMood.party) { valence = 0.85; energy = 0.9; tempo = 130.0; acousticness = 0.1; }
+    else if (mood == SongMood.highEnergy) { valence = 0.7; energy = 0.95; tempo = 140.0; acousticness = 0.05; }
+    else if (mood == SongMood.romantic) { valence = 0.65; energy = 0.35; tempo = 85.0; acousticness = 0.6; }
+    else if (mood == SongMood.emotional) { valence = 0.25; energy = 0.3; tempo = 80.0; acousticness = 0.55; }
+    else {
+      final titleLower = title.toLowerCase();
+      if (titleLower.contains('lofi') || titleLower.contains('acoustic') || titleLower.contains('unplugged')) { valence = 0.4; energy = 0.25; tempo = 75.0; acousticness = 0.8; }
+      else if (titleLower.contains('remix') || titleLower.contains('edm') || titleLower.contains('bass')) { valence = 0.7; energy = 0.85; tempo = 128.0; acousticness = 0.05; }
+      else if (titleLower.contains('classical') || titleLower.contains('carnatic') || titleLower.contains('hindustani')) { valence = 0.45; energy = 0.2; tempo = 70.0; acousticness = 0.9; }
+      else if (titleLower.contains('devotional') || titleLower.contains('bhajan') || titleLower.contains('temple')) { valence = 0.5; energy = 0.15; tempo = 65.0; acousticness = 0.85; }
+    }
+
     return Song(
       id: songId.toString(),
       title: title,
@@ -741,6 +776,10 @@ class Song {
       year: toStringVal(json['year']),
       language: language,
       mood: mood,
+      valence: valence,
+      energy: energy,
+      tempo: tempo,
+      acousticness: acousticness,
     );
   }
 
@@ -1310,24 +1349,40 @@ class RecommendationEngine {
   }
 
   List<Song> getSimilarToRecent(List<Song> songs) {
-    if (tasteProfile.recentlyPlayed.isEmpty) return songs.take(20).toList();
-    
-    final recentArtists = <String>{};
-    final recentLanguages = <String>{};
-    
-    for (var interaction in _interactionHistory.take(50)) {
-      if (interaction.type == InteractionType.watch && interaction.watchPercentage > 0.5) {
-        recentArtists.add(interaction.artist);
-        recentLanguages.add(interaction.language);
-      }
+    if (tasteProfile.recentlyPlayed.isEmpty && tasteProfile.likedSongs.isEmpty) {
+      return songs.take(20).toList();
     }
     
+    final profileArtists = <String, int>{};
+    final profileLanguages = <String, int>{};
+    
+    for (var interaction in _interactionHistory.take(100)) {
+      final weight = interaction.type == InteractionType.like ? 3 :
+                     interaction.type == InteractionType.rewatch ? 4 :
+                     interaction.type == InteractionType.skip ? -1 :
+                     interaction.watchPercentage > 0.7 ? 2 : 1;
+      profileArtists[interaction.artist] = (profileArtists[interaction.artist] ?? 0) + weight;
+      profileLanguages[interaction.language] = (profileLanguages[interaction.language] ?? 0) + weight;
+    }
+
+    final topArtists = profileArtists.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final topArtistNames = topArtists.take(10).map((e) => e.key).toSet();
+    final topLangNames = profileLanguages.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final topLangSet = topLangNames.take(5).map((e) => e.key).toSet();
+
     final similar = songs.where((song) {
       if (tasteProfile.isNotInterested(song.id)) return false;
-      return recentArtists.contains(song.artist) || recentLanguages.contains(song.language);
+      if (topArtistNames.contains(song.artist)) return true;
+      if (topLangSet.contains(song.language) && song.energy > 0.3) return true;
+      return false;
     }).toList();
     
-    similar.sort((a, b) => calculateSongScore(b).compareTo(calculateSongScore(a)));
+    similar.sort((a, b) {
+      final scoreA = calculateSongScore(a) + (topArtistNames.contains(a.artist) ? 30 : 0) + (topLangSet.contains(a.language) ? 15 : 0);
+      final scoreB = calculateSongScore(b) + (topArtistNames.contains(b.artist) ? 30 : 0) + (topLangSet.contains(b.language) ? 15 : 0);
+      return scoreB.compareTo(scoreA);
+    });
+    
     return similar.take(25).toList();
   }
 
@@ -1416,6 +1471,321 @@ class RecommendationEngine {
   }
 
   List<MusicPlaylist> getPlaylists() => _playlists;
+
+  double _getTimeEnergyMultiplier() {
+    final hour = DateTime.now().hour;
+    if (hour >= 6 && hour < 10) return 0.85;
+    if (hour >= 10 && hour < 14) return 0.7;
+    if (hour >= 14 && hour < 18) return 0.6;
+    if (hour >= 18 && hour < 22) return 0.5;
+    return 0.3;
+  }
+
+  String _getTimeContext() {
+    final hour = DateTime.now().hour;
+    if (hour >= 6 && hour < 10) return 'morning';
+    if (hour >= 10 && hour < 14) return 'afternoon';
+    if (hour >= 14 && hour < 18) return 'evening';
+    if (hour >= 18 && hour < 22) return 'night';
+    return 'late_night';
+  }
+
+  double _calculateAudioMatchScore(Song song, Song currentSong) {
+    double score = 0;
+    score += (1.0 - (song.energy - currentSong.energy).abs()) * 15;
+    score += (1.0 - (song.valence - currentSong.valence).abs()) * 10;
+    score += (1.0 - (song.tempo - currentSong.tempo).abs() / 80.0) * 8;
+    score += (1.0 - (song.acousticness - currentSong.acousticness).abs()) * 5;
+    return score;
+  }
+
+  double _calculateMetadataNlpScore(Song song) {
+    double score = 0;
+    final titleLower = song.title.toLowerCase();
+    final artistLower = song.artist.toLowerCase();
+
+    final topSearches = tasteProfile.getTopSearches(10);
+    for (var search in topSearches) {
+      final searchLower = search.toLowerCase();
+      if (titleLower.contains(searchLower) || searchLower.contains(titleLower)) {
+        score += 20;
+      }
+      final searchWords = searchLower.split(RegExp(r'\s+'));
+      for (var word in searchWords) {
+        if (word.length > 2 && titleLower.contains(word)) score += 5;
+      }
+    }
+
+    final recentInteractions = _interactionHistory.take(50);
+    for (var interaction in recentInteractions) {
+      if (interaction.artist.toLowerCase() == artistLower) {
+        score += 3;
+      }
+    }
+
+    final topArtists = tasteProfile.getTopArtists(5);
+    if (topArtists.contains(song.artist)) score += 15;
+
+    final topLanguages = tasteProfile.getTopLanguages(3);
+    if (topLanguages.contains(song.language)) score += 10;
+
+    return score;
+  }
+
+  Song getSmartNextSong(List<Song> allSongs, Song? currentSong, {bool wasSkipped = false}) {
+    if (allSongs.isEmpty) return currentSong ?? allSongs.first;
+    if (allSongs.length == 1) return allSongs.first;
+
+    final timeContext = _getTimeContext();
+    final isExploration = DateTime.now().millisecond % 5 == 0;
+
+    if (isExploration) {
+      final explored = tasteProfile.recentlyPlayed.toSet();
+      final candidates = allSongs.where((s) {
+        if (explored.contains(s.id)) return false;
+        if (s.id == currentSong?.id) return false;
+        return true;
+      }).toList();
+      if (candidates.isNotEmpty) {
+        candidates.shuffle();
+        return candidates.first;
+      }
+    }
+
+    final scored = allSongs.where((s) => s.id != currentSong?.id).map((song) {
+      double score = calculateSongScore(song, useSessionWeight: true);
+
+      score += _calculateMetadataNlpScore(song);
+
+      if (currentSong != null) {
+        score += _calculateAudioMatchScore(song, currentSong);
+      }
+
+      switch (timeContext) {
+        case 'morning':
+          score += song.energy * 20;
+          score += song.valence * 15;
+          break;
+        case 'afternoon':
+          score += song.energy * 10;
+          break;
+        case 'evening':
+          score += (1.0 - song.energy) * 10;
+          score += song.acousticness * 15;
+          break;
+        case 'night':
+          score += (1.0 - song.energy) * 15;
+          score += song.acousticness * 20;
+          score += (1.0 - song.valence) * 10;
+          break;
+        case 'late_night':
+          score += song.acousticness * 25;
+          score += (1.0 - song.energy) * 20;
+          score += (1.0 - song.valence) * 15;
+          break;
+      }
+
+      if (wasSkipped) {
+        if (currentSong != null) {
+          final audioDiff = (song.energy - currentSong.energy).abs() +
+              (song.valence - currentSong.valence).abs();
+          score += audioDiff * 15;
+        }
+      }
+
+      final jitter = (DateTime.now().millisecond % 8) - 4;
+      score += jitter;
+
+      return MapEntry(song, score);
+    }).toList();
+
+    scored.sort((a, b) => b.value.compareTo(a.value));
+    return scored.first.key;
+  }
+
+  void populatePlaylistsWithSongs(List<Song> allSongs) {
+    for (var playlist in _playlists) {
+      if (playlist.songIds.isNotEmpty) continue;
+
+      List<Song> matched;
+      switch (playlist.id) {
+        case 'tamil_hitz':
+          matched = allSongs.where((s) => s.language == 'Tamil' && s.energy > 0.6).toList();
+          break;
+        case 'hindi_hitz':
+          matched = allSongs.where((s) => s.language == 'Hindi' && s.energy > 0.6).toList();
+          break;
+        case 'romantic_tamil':
+          matched = allSongs.where((s) => s.mood == SongMood.romantic || s.acousticness > 0.5).toList();
+          break;
+        case 'melody_nights':
+          matched = allSongs.where((s) => s.energy < 0.4 && s.acousticness > 0.4).toList();
+          break;
+        case 'party_starter':
+          matched = allSongs.where((s) => s.mood == SongMood.party || s.energy > 0.8).toList();
+          break;
+        case 'workout_beats':
+          matched = allSongs.where((s) => s.energy > 0.75 && s.tempo > 110).toList();
+          break;
+        case 'study_lofi':
+          matched = allSongs.where((s) => s.acousticness > 0.6 || s.energy < 0.35).toList();
+          break;
+        case 'sleep_well':
+          matched = allSongs.where((s) => s.energy < 0.25 && s.acousticness > 0.5).toList();
+          break;
+        case 'rainy_day':
+          matched = allSongs.where((s) => s.valence < 0.5 && s.acousticness > 0.4).toList();
+          break;
+        case 'road_trip':
+          matched = allSongs.where((s) => s.energy > 0.5 && s.valence > 0.5).toList();
+          break;
+        case 'morning_coffee':
+          matched = allSongs.where((s) => s.energy < 0.5 && s.acousticness > 0.3).toList();
+          break;
+        case 'throwback_90s':
+          matched = allSongs.where((s) => s.year.isNotEmpty && int.tryParse(s.year) != null && int.parse(s.year) < 2000).toList();
+          break;
+        case 'throwback_2000s':
+          matched = allSongs.where((s) {
+            if (s.year.isEmpty) return false;
+            final y = int.tryParse(s.year);
+            return y != null && y >= 2000 && y < 2010;
+          }).toList();
+          break;
+        case 'ar_rahman_classics':
+          matched = allSongs.where((s) => s.artist.contains('Rahman') || s.artist.contains('A.R.')).toList();
+          break;
+        case 'anirudh_essentials':
+          matched = allSongs.where((s) => s.artist.contains('Anirudh')).toList();
+          break;
+        case 'ilaiyaraaja_golden':
+          matched = allSongs.where((s) => s.artist.contains('Ilaiyaraaja')).toList();
+          break;
+        case 'yuvan_vibes':
+          matched = allSongs.where((s) => s.artist.contains('Yuvan')).toList();
+          break;
+        case 'sid_sriram_soul':
+          matched = allSongs.where((s) => s.artist.contains('Sid Sriram')).toList();
+          break;
+        case 'harris_energy':
+          matched = allSongs.where((s) => s.artist.contains('Harris')).toList();
+          break;
+        case 'dsp_power':
+          matched = allSongs.where((s) => s.artist.contains('DSP') || s.artist.contains('Devi Sri')).toList();
+          break;
+        case 'thaman_feast':
+          matched = allSongs.where((s) => s.artist.contains('Thaman')).toList();
+          break;
+        case 'gv_prakash_vibes':
+          matched = allSongs.where((s) => s.artist.contains('G.V. Prakash')).toList();
+          break;
+        case 'arijit_singh_hindi':
+          matched = allSongs.where((s) => s.artist.contains('Arijit')).toList();
+          break;
+        case 'classical_carnatic':
+          matched = allSongs.where((s) => s.mood == SongMood.highEnergy && s.acousticness > 0.5 || s.title.toLowerCase().contains('classical')).toList();
+          break;
+        case 'devotional_mix':
+          matched = allSongs.where((s) => s.title.toLowerCase().contains('devotional') || s.title.toLowerCase().contains('bhajan') || s.title.toLowerCase().contains('temple')).toList();
+          break;
+        case 'indie_tamil':
+          matched = allSongs.where((s) => s.language == 'Tamil' && s.album.toLowerCase().contains('single')).toList();
+          break;
+        case 'electronic_mix':
+          matched = allSongs.where((s) => s.energy > 0.7 && s.acousticness < 0.2).toList();
+          break;
+        case 'acoustic_unplugged':
+          matched = allSongs.where((s) => s.acousticness > 0.6).toList();
+          break;
+        case 'ghazal_nights':
+          matched = allSongs.where((s) => s.title.toLowerCase().contains('ghazal') || s.title.toLowerCase().contains('qawwali')).toList();
+          break;
+        case 'qawwali_spirit':
+          matched = allSongs.where((s) => s.title.toLowerCase().contains('qawwali') || s.title.toLowerCase().contains('sufi')).toList();
+          break;
+        case 'kuthu_king':
+          matched = allSongs.where((s) => s.mood == SongMood.party || s.title.toLowerCase().contains('kuthu')).toList();
+          break;
+        case 'sad_songs':
+          matched = allSongs.where((s) => s.mood == SongMood.emotional || s.valence < 0.3).toList();
+          break;
+        case 'love_stories':
+          matched = allSongs.where((s) => s.mood == SongMood.romantic || s.title.toLowerCase().contains('love')).toList();
+          break;
+        case 'bgm_collection':
+          matched = allSongs.where((s) => s.title.toLowerCase().contains('bgm') || s.title.toLowerCase().contains('theme')).toList();
+          break;
+        case 'retro_tamil':
+          matched = allSongs.where((s) => s.language == 'Tamil' && s.year.isNotEmpty && int.tryParse(s.year) != null && int.parse(s.year) < 2005).toList();
+          break;
+        case 'bollywood_hitz':
+          matched = allSongs.where((s) => s.language == 'Hindi').toList();
+          break;
+        case 'english_pop':
+          matched = allSongs.where((s) => s.language == 'English').toList();
+          break;
+        case 'malayalam_melodies':
+          matched = allSongs.where((s) => s.language == 'Malayalam').toList();
+          break;
+        case 'telugu_trending':
+          matched = allSongs.where((s) => s.language == 'Telugu').toList();
+          break;
+        case 'punjabi_vibes':
+          matched = allSongs.where((s) => s.language == 'Punjabi').toList();
+          break;
+        case 'kannada_golden':
+          matched = allSongs.where((s) => s.language == 'Kannada').toList();
+          break;
+        case 'bengali_soul':
+          matched = allSongs.where((s) => s.language == 'Bengali').toList();
+          break;
+        case 'new_releases':
+          matched = allSongs.where((s) {
+            if (s.year.isEmpty) return false;
+            final y = int.tryParse(s.year);
+            return y != null && y >= 2024;
+          }).toList();
+          break;
+        case 'top_charts_india':
+          matched = allSongs.where((s) => s.energy > 0.6 && s.valence > 0.5).toList();
+          break;
+        case 'discovery_radar':
+          matched = allSongs.where((s) => !tasteProfile.isNotInterested(s.id)).toList();
+          matched.shuffle();
+          break;
+        case 'relaxation_zone':
+          matched = allSongs.where((s) => s.energy < 0.4).toList();
+          break;
+        case 'energy_boost':
+          matched = allSongs.where((s) => s.energy > 0.8).toList();
+          break;
+        case 'sufi_soul':
+          matched = allSongs.where((s) => s.title.toLowerCase().contains('sufi') || s.title.toLowerCase().contains('qawwali')).toList();
+          break;
+        case 'festival_mix':
+          matched = allSongs.where((s) => s.valence > 0.7 && s.energy > 0.5).toList();
+          break;
+        case 'daily_mix_1':
+          matched = getRecommendedSongs(allSongs, limit: 50);
+          break;
+        case 'daily_mix_2':
+          matched = getRecommendedSongs(allSongs, limit: 50);
+          matched.shuffle();
+          break;
+        case 'daily_mix_3':
+          matched = getDiscoverMix(allSongs);
+          break;
+        case 'discover_mix':
+          matched = getDiscoverMix(allSongs);
+          break;
+        default:
+          matched = getRecommendedSongs(allSongs, limit: 50);
+      }
+
+      matched.shuffle();
+      playlist.songIds = matched.take(50).map((s) => s.id).toList();
+    }
+  }
 
   int get totalSongsPlayed => _interactionHistory.length;
 
@@ -1511,7 +1881,8 @@ class RecommendationEngine {
 }
 
 class MusicPlayerScreen extends StatefulWidget {
-  const MusicPlayerScreen({super.key});
+  final AudioPlayerHandler audioHandler;
+  const MusicPlayerScreen({super.key, required this.audioHandler});
 
   @override
   State<MusicPlayerScreen> createState() => _MusicPlayerScreenState();
@@ -1521,9 +1892,9 @@ enum RepeatMode { off, one, all }
 
 class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
   AudioPlayer _audioPlayer = AudioPlayer();
+  late final AudioPlayerHandler _audioHandler = widget.audioHandler;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final FocusNode _searchFocusNode = FocusNode();
   late TabController _tabController;
   
   List<Song> _songs = [];
@@ -1579,6 +1950,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
+    _audioPlayer = _audioHandler.player;
+    _audioHandler.onNext = _playNext;
+    _audioHandler.onPrevious = _playPrevious;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateDeviceType();
       _loadPreferences();
@@ -1717,6 +2091,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         _discoverMix = discoverMix;
         _isLoading = false;
       });
+      RecommendationEngine.instance.populatePlaylistsWithSongs(allSongs);
+      setState(() {
+        _playlists = RecommendationEngine.instance.getPlaylists();
+      });
       _initAudio();
     } catch (e) {
       debugPrint('Error loading songs: $e');
@@ -1826,6 +2204,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     
     final song = _songs[index];
     _fetchLyrics(song.id, song.title);
+    _audioHandler.setMediaItem(
+      id: song.id,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      artUri: song.imageUrl,
+    );
     
     if (song.audioUrl.isNotEmpty) {
       bool played = false;
@@ -1865,6 +2250,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       debugPrint('Dispose error: $e');
     }
     _audioPlayer = AudioPlayer();
+    _audioHandler.attachPlayer(_audioPlayer);
     _setupPlayerListeners();
   }
 
@@ -1936,13 +2322,38 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       await _audioPlayer.play();
       return;
     }
+
+    int nextIndex;
     
-    int nextIndex = _currentIndex + 1;
-    if (nextIndex >= _songs.length) {
-      if (_repeatMode == RepeatMode.all) {
-        nextIndex = 0;
+    if (_shuffleEnabled && _shuffledIndices.isNotEmpty) {
+      final currentPos = _shuffledIndices.indexOf(_currentIndex);
+      if (currentPos >= 0 && currentPos < _shuffledIndices.length - 1) {
+        nextIndex = _shuffledIndices[currentPos + 1];
+      } else if (_repeatMode == RepeatMode.all) {
+        nextIndex = _shuffledIndices.first;
       } else {
         return;
+      }
+    } else {
+      final wasSkipped = _position.inSeconds < 30 && _duration.inSeconds > 30;
+      final currentSong = _songs[_currentIndex];
+      
+      final smartNext = RecommendationEngine.instance.getSmartNextSong(
+        _songs,
+        currentSong,
+        wasSkipped: wasSkipped,
+      );
+      
+      nextIndex = _songs.indexOf(smartNext);
+      if (nextIndex == -1 || nextIndex == _currentIndex) {
+        nextIndex = _currentIndex + 1;
+        if (nextIndex >= _songs.length) {
+          if (_repeatMode == RepeatMode.all) {
+            nextIndex = 0;
+          } else {
+            return;
+          }
+        }
       }
     }
     await _playSong(nextIndex);
@@ -2250,20 +2661,44 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
-        backgroundColor: background,
-        body: _showFullPlayer 
-            ? _buildFullPlayer() 
-            : (_isTV ? _buildTVLayout() 
-              : _isDesktop ? _buildDesktopLayout() 
-              : _isTablet ? _buildTabletLayout() 
-              : _buildMobileLayout()),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_showFullPlayer) {
+          setState(() => _showFullPlayer = false);
+        } else if (_bottomNavIndex != 0) {
+          setState(() => _bottomNavIndex = 0);
+        } else {
+          _minimizeApp();
+        }
+      },
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _handleKeyEvent,
+        child: Scaffold(
+          backgroundColor: background,
+          body: _showFullPlayer 
+              ? _buildFullPlayer() 
+              : (_isTV ? _buildTVLayout() 
+                : _isDesktop ? _buildDesktopLayout() 
+                : _isTablet ? _buildTabletLayout() 
+                : _buildMobileLayout()),
+        ),
       ),
     );
+  }
+
+  Future<void> _minimizeApp() async {
+    if (kIsWeb) return;
+    try {
+      const methodChannel = MethodChannel('com.srikeyan.music/minimize');
+      await methodChannel.invokeMethod('moveToBack');
+    } catch (e) {
+      debugPrint('Minimize error: $e');
+      if (!kIsWeb) await SystemNavigator.pop();
+    }
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
@@ -2837,14 +3272,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+            ClipOval(
+              child: Image.asset(
+                'assets/logo.png',
+                width: 72,
+                height: 72,
+                fit: BoxFit.cover,
               ),
-              child: Icon(Icons.music_note_rounded, size: 40, color: accent),
             ),
             const SizedBox(height: 16),
             Text('Keyan Music', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textPrimary)),
@@ -3249,14 +3683,13 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               padding: const EdgeInsets.all(20),
               child: Row(
                 children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
+                  ClipOval(
+                    child: Image.asset(
+                      'assets/logo.png',
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
                     ),
-                    child: Icon(Icons.phone_android_rounded, color: accent, size: 28),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -3845,6 +4278,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         setState(() {
           _songs = [..._songs, ...newSongs];
           _isLoadingMore = false;
+        });
+        RecommendationEngine.instance.populatePlaylistsWithSongs(_songs);
+        setState(() {
+          _playlists = RecommendationEngine.instance.getPlaylists();
         });
       } else {
         setState(() => _isLoadingMore = false);
@@ -4861,7 +5298,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             setState(() {
               _shuffleEnabled = !_shuffleEnabled;
               if (_shuffleEnabled) {
-                _shuffledIndices = List.generate(_songs.length, (i) => i)..shuffle();
+                final smartOrder = <int>[];
+                final remaining = List<int>.generate(_songs.length, (i) => i)
+                  ..removeWhere((i) => i == _currentIndex);
+                final scores = remaining.map((i) => MapEntry(i, RecommendationEngine.instance.calculateSongScore(_songs[i], useSessionWeight: true))).toList()
+                  ..sort((a, b) => b.value.compareTo(a.value));
+                for (var entry in scores) {
+                  smartOrder.add(entry.key);
+                }
+                _shuffledIndices = [_currentIndex, ...smartOrder];
               }
             });
           },
