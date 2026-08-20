@@ -36,7 +36,8 @@ jobs:
       - name: Update pubspec version
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
-          sed -i "s/^version: .*/version: ${VERSION}+1/" pubspec.yaml
+          CODE=$(echo "$VERSION" | awk -F. '{printf "%d%02d%02d", $1, $2, $3}')
+          sed -i "s/^version: .*/version: ${VERSION}+${CODE}/" pubspec.yaml
           grep "^version:" pubspec.yaml
 
       - name: Setup Java
