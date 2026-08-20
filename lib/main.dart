@@ -7,7 +7,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' show ImageFilter;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase/supabase.dart';
 import 'package:uuid/uuid.dart';
@@ -1936,6 +1938,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   bool _isLandscape = false;
   int _bottomNavIndex = 0;
   bool _sidebarExpanded = true;
+  String? _downloadingSongId;
+  final Set<String> _downloadedSongIds = {};
+  bool _likeAnimating = false;
+  bool _downloadAnimating = false;
+  bool _shareAnimating = false;
   bool _showDownloadBanner = true;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
@@ -2281,21 +2288,49 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   Future<void> _downloadSong(Song song) async {
     if (song.audioUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No audio available for download')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No audio available for download')),
+        );
+      }
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Opening ${song.title} for download...')),
-    );
+    setState(() => _downloadingSongId = song.id);
 
-    final downloadUrl = JioSaavnApi.getPlayableUrls(song.audioUrl).first;
-    final uri = Uri.parse(downloadUrl);
-    
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      final downloadUrl = JioSaavnApi.getPlayableUrls(song.audioUrl).first;
+      final response = await http.get(Uri.parse(downloadUrl)).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        throw Exception('Download failed with status ${response.statusCode}');
+      }
+
+      final dir = await getApplicationDocumentsDirectory();
+      final fileName = '${song.artist.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_')} - ${song.title.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_')}.mp3';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(response.bodyBytes);
+
+      if (mounted) {
+        setState(() {
+          _downloadedSongIds.add(song.id);
+          _downloadingSongId = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloaded: ${song.title}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Download error: $e');
+      if (mounted) {
+        setState(() => _downloadingSongId = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
     }
   }
 
@@ -2504,6 +2539,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       _likedSongs.remove(song.id);
     } else {
       _likedSongs.add(song.id);
+      setState(() => _likeAnimating = true);
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) setState(() => _likeAnimating = false);
     }
     
     setState(() {});
@@ -2522,7 +2560,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isLiked ? 'Removed from likes' : 'Added to favorites'),
+          content: Text(isLiked ? 'Removed from favorites' : 'Added to favorites'),
           duration: const Duration(seconds: 1),
         ),
       );
@@ -5189,29 +5227,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: () => _toggleLike(song),
-                child: Icon(
-                  isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: isLiked ? Colors.white : Colors.white.withValues(alpha: 0.3),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 32),
-              GestureDetector(
-                onTap: () => _downloadSong(song),
-                child: Icon(Icons.download_outlined, color: Colors.white.withValues(alpha: 0.3), size: 18),
-              ),
-              const SizedBox(width: 32),
-              GestureDetector(
-                onTap: () => _shareSong(song),
-                child: Icon(Icons.share_outlined, color: Colors.white.withValues(alpha: 0.3), size: 18),
-              ),
-            ],
-          ),
+          _buildActionButtons(song, isLiked),
           const SizedBox(height: 24),
           _buildDesktopProgressSection(),
           const SizedBox(height: 8),
@@ -5236,6 +5252,198 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           SizedBox(height: 280, child: TabBarView(controller: _tabController, children: [_buildLyricsTab(), _buildSongDetailsTab(song)])),
         ],
       ),
+    );
+  }
+
+  Widget _buildActionButtons(Song song, bool isLiked) {
+    final isDownloading = _downloadingSongId == song.id;
+    final isDownloaded = _downloadedSongIds.contains(song.id);
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        GestureDetector(
+          onTap: () => _toggleLike(song),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: isLiked ? Colors.white : Colors.white.withValues(alpha: 0.2),
+                width: 2.5,
+              ),
+              color: isLiked ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedScale(
+                  scale: _likeAnimating ? 1.6 : 1.0,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.elasticOut,
+                  child: Icon(
+                    isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: isLiked ? Colors.white : Colors.white.withValues(alpha: 0.3),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  isLiked ? 'Liked' : 'Like',
+                  style: TextStyle(
+                    color: isLiked ? Colors.white : Colors.white.withValues(alpha: 0.3),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (_likeAnimating) ...[
+                  const SizedBox(width: 8),
+                  ...List.generate(3, (i) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 1),
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      duration: Duration(milliseconds: 600 + i * 100),
+                      builder: (context, value, child) {
+                        return Transform.translate(
+                          offset: Offset(0, -20 * value),
+                          child: Opacity(
+                            opacity: (1.0 - value).clamp(0.0, 1.0),
+                            child: Icon(
+                              Icons.favorite,
+                              color: Colors.white,
+                              size: 10.0 - i * 2,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  )),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        GestureDetector(
+          onTap: isDownloading ? null : () => _downloadSong(song),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: isDownloaded
+                    ? Colors.white
+                    : isDownloading
+                        ? Colors.white.withValues(alpha: 0.5)
+                        : Colors.white.withValues(alpha: 0.2),
+                width: 2.5,
+              ),
+              color: isDownloaded
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : Colors.transparent,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+                  child: isDownloading
+                      ? const SizedBox(
+                          key: ValueKey('progress'),
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        )
+                      : isDownloaded
+                          ? const Icon(
+                              Icons.check_circle,
+                              key: ValueKey('done'),
+                              color: Colors.white,
+                              size: 20,
+                            )
+                          : Icon(
+                              Icons.download_outlined,
+                              key: ValueKey('download'),
+                              color: Colors.white.withValues(alpha: 0.3),
+                              size: 20,
+                            ),
+                ),
+                const SizedBox(width: 8),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Text(
+                    isDownloading
+                        ? 'Downloading...'
+                        : isDownloaded
+                            ? 'Downloaded'
+                            : 'Download',
+                    key: ValueKey(isDownloading ? 'dl' : isDownloaded ? 'done' : 'idle'),
+                    style: TextStyle(
+                      color: isDownloaded
+                          ? Colors.white
+                          : isDownloading
+                              ? Colors.white.withValues(alpha: 0.7)
+                              : Colors.white.withValues(alpha: 0.3),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        GestureDetector(
+          onTapDown: (_) => setState(() => _shareAnimating = true),
+          onTapUp: (_) {
+            setState(() => _shareAnimating = false);
+            _shareSong(song);
+          },
+          onTapCancel: () => setState(() => _shareAnimating = false),
+          child: AnimatedScale(
+            scale: _shareAnimating ? 0.9 : 1.0,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutCubic,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  width: 2.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.share_outlined,
+                    color: Colors.white.withValues(alpha: 0.3),
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Share',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -5564,29 +5772,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                 const SizedBox(height: 8),
                 _buildControlsSection(),
                 const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    GestureDetector(
-                      onTap: () => _toggleLike(song),
-                      child: Icon(
-                        isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: isLiked ? Colors.white : Colors.white.withValues(alpha: 0.3),
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 32),
-                    GestureDetector(
-                      onTap: () => _downloadSong(song),
-                      child: Icon(Icons.download_outlined, color: Colors.white.withValues(alpha: 0.3), size: 18),
-                    ),
-                    const SizedBox(width: 32),
-                    GestureDetector(
-                      onTap: () => _shareSong(song),
-                      child: Icon(Icons.share_outlined, color: Colors.white.withValues(alpha: 0.3), size: 18),
-                    ),
-                  ],
-                ),
+                _buildActionButtons(song, isLiked),
                 const SizedBox(height: 20),
                 Container(
                   margin: EdgeInsets.symmetric(horizontal: _responsivePadding),
