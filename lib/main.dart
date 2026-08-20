@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, compute;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +16,7 @@ import 'package:supabase/supabase.dart';
 import 'package:uuid/uuid.dart';
 import 'audio_handler.dart';
 import 'download_helper.dart';
+import 'recommendation_ml.dart';
 
 class ThemeController extends ValueNotifier<ThemeMode> {
   ThemeController() : super(ThemeMode.system) {
@@ -1103,6 +1104,21 @@ class RecommendationEngine {
   List<SongInteraction> _interactionHistory = [];
   List<MusicPlaylist> _playlists = [];
 
+  List<Song> _catalog = [];
+  final Map<String, Song> _songById = {};
+  final Map<String, int> _songIndexById = {};
+  LSHIndex? _lshIndex;
+  List<List<double>>? _userFactors;
+  List<List<double>>? _itemFactors;
+  final ContextualBanditRanker _bandit = ContextualBanditRanker(seed: 7);
+  bool _modelTrained = false;
+  int _trainedKey = -1;
+  bool _isTraining = false;
+  Timer? _retrainDebounce;
+
+  static const int _alsFactorDim = 16;
+  static const int _contentDim = 18;
+
   Future<void> init() async {
     await _loadFromStorage();
   }
@@ -1241,11 +1257,16 @@ class RecommendationEngine {
   Future<void> recordInteraction(SongInteraction interaction) async {
     _interactionHistory.add(interaction);
     tasteProfile.updateFromInteraction(interaction);
-    
+
+    if (interaction.type == InteractionType.skip && interaction.watchDuration < 30) {
+      _applyNegativeOverride(interaction.songId);
+    }
+
     if (_interactionHistory.length > 1000) {
       _interactionHistory = _interactionHistory.sublist(_interactionHistory.length - 1000);
     }
-    
+
+    _scheduleRetrain();
     await _saveToStorage();
   }
 
@@ -1257,6 +1278,300 @@ class RecommendationEngine {
     _searchSaveDebounce = Timer(const Duration(seconds: 2), () {
       _saveToStorage();
     });
+  }
+
+  // =============================================================
+  // Two-stage recommendation pipeline:
+  //   Stage 1: Implicit ALS + hybrid embeddings -> LSH ANN candidates
+  //   Stage 2: Contextual bandit re-ranking (time, negative signals)
+  // =============================================================
+
+  void updateCatalog(List<Song> songs) {
+    _catalog = songs;
+    _songById.clear();
+    _songIndexById.clear();
+    for (var i = 0; i < songs.length; i++) {
+      _songById[songs[i].id] = songs[i];
+      _songIndexById[songs[i].id] = i;
+    }
+  }
+
+  Future<void> trainCollaborativeModel({bool force = false}) async {
+    if (_isTraining) return;
+    if (_catalog.length < 2 || _interactionHistory.length < 2) return;
+    final key = _interactionHistory.length * 100003 + _catalog.length;
+    if (!force && _modelTrained && key == _trainedKey) return;
+
+    _isTraining = true;
+    try {
+      // Build user-item implicit preference matrix from session pseudo-users
+      final sessions = <List<SongInteraction>>[];
+      var current = <SongInteraction>[];
+      DateTime? lastTs;
+      for (final it in _interactionHistory) {
+        if (lastTs != null &&
+            it.timestamp.difference(lastTs).inMinutes > 45 &&
+            current.isNotEmpty) {
+          sessions.add(current);
+          current = [];
+        }
+        current.add(it);
+        lastTs = it.timestamp;
+      }
+      if (current.isNotEmpty) sessions.add(current);
+
+      // Sessions + one aggregate row representing the active user
+      final counts =
+          List.generate(sessions.length + 1, (_) => List<double>.filled(_catalog.length, 0));
+      for (var su = 0; su < sessions.length; su++) {
+        for (final it in sessions[su]) {
+          final i = _songIndexById[it.songId];
+          if (i == null) continue;
+          double r = counts[su][i];
+          switch (it.type) {
+            case InteractionType.watch:
+              r += it.watchPercentage > 0.7 ? 2 : 1;
+              break;
+            case InteractionType.rewatch:
+              r += 3;
+              break;
+            case InteractionType.like:
+              r += 4;
+              break;
+            case InteractionType.playlistPlay:
+              r += 2;
+              break;
+            case InteractionType.share:
+              r += 3;
+              break;
+            case InteractionType.addToPlaylist:
+              r += 2;
+              break;
+            case InteractionType.skip:
+              if (r > 2) {
+                r -= 2;
+              } else {
+                r = 0.0;
+              }
+              break;
+            case InteractionType.notInterested:
+              r = 0.0;
+              break;
+          }
+          counts[su][i] = r;
+          counts[sessions.length][i] += r;
+        }
+      }
+
+      final activeRows = counts.where((row) => row.any((c) => c > 0)).length;
+      if (activeRows < 2) return;
+
+      // Stage 1: factorize in a background isolate, then index hybrid vectors
+      final payload = ALSInputPayload(
+        interactionMatrix: counts,
+        factors: _alsFactorDim,
+        iterations: 12,
+        regularization: 0.05,
+      );
+      final result = await compute(runImplicitALSTraining, payload);
+      _userFactors = result.userFactors;
+      _itemFactors = result.itemFactors;
+
+      final lsh = LSHIndex(dim: _alsFactorDim + _contentDim, kHyperplanes: 16, seed: 42);
+      for (var i = 0; i < _catalog.length; i++) {
+        lsh.addItem(i, _hybridItemVector(_catalog[i], _itemFactors![i]));
+      }
+      _lshIndex = lsh;
+      _modelTrained = true;
+      _trainedKey = key;
+      _bandit.decaySessionPenalties();
+    } catch (e) {
+      debugPrint('ALS training failed: $e');
+      _modelTrained = false;
+    } finally {
+      _isTraining = false;
+    }
+  }
+
+  void _scheduleRetrain() {
+    _retrainDebounce?.cancel();
+    _retrainDebounce = Timer(const Duration(seconds: 3), () {
+      unawaited(trainCollaborativeModel());
+    });
+  }
+
+  void _applyNegativeOverride(String songId) {
+    final idx = _songIndexById[songId];
+    if (idx != null) {
+      _bandit.registerSkipSignal(idx);
+    }
+  }
+
+  // Hybrid item embedding: [normalized ALS factor (16D) | content vec (18D)]
+  // Zero ALS sub-vector for never-played tracks lets content dominate
+  // (graceful cold-start handling).
+  List<double> _hybridItemVector(Song s, List<double> alsFactor) {
+    final als = normalizeVector(alsFactor);
+    return [...als, ..._contentVector(s)];
+  }
+
+  List<double> _contentVector(Song s) {
+    final moodVec = List<double>.filled(5, 0);
+    moodVec[s.mood.index] = 1.0;
+    final langVec = List<double>.filled(9, 0);
+    langVec[_languageIndex(s.language)] = 1.0;
+    return [
+      s.energy,
+      s.valence,
+      ((s.tempo - 60) / 120).clamp(-1.0, 1.0).toDouble(),
+      s.acousticness,
+      ...moodVec,
+      ...langVec,
+    ];
+  }
+
+  int _languageIndex(String lang) {
+    const langs = [
+      'Tamil', 'Hindi', 'English', 'Malayalam', 'Telugu',
+      'Punjabi', 'Kannada', 'Bengali', 'Other',
+    ];
+    final i = langs.indexOf(lang);
+    return i >= 0 ? i : 8;
+  }
+
+  // Active-user hybrid query vector: [user ALS factor | content preference]
+  List<double> _userHybridVector() {
+    final als = _userFactors?.last ?? List<double>.filled(_alsFactorDim, 0);
+    return [...als, ..._userContentVector()];
+  }
+
+  List<double> _userContentVector() {
+    final ref = <Song>[];
+    for (final id in {
+      ...tasteProfile.likedSongs,
+      ...tasteProfile.rewatchedSongs,
+      ...tasteProfile.sharedSongs,
+    }) {
+      final s = _songById[id];
+      if (s != null) ref.add(s);
+    }
+    if (ref.isEmpty) {
+      for (final id in tasteProfile.recentlyPlayed.take(15)) {
+        final s = _songById[id];
+        if (s != null) ref.add(s);
+      }
+    }
+    if (ref.isEmpty) {
+      return [
+        0.5, 0.5, 0.5, 0.3,
+        ...List.filled(5, 0.2),
+        ...List.filled(9, 1 / 9),
+      ];
+    }
+    final n = ref.length.toDouble();
+    double e = 0, v = 0, t = 0, a = 0;
+    final moodCounts = List<double>.filled(5, 0);
+    final langCounts = List<double>.filled(9, 0);
+    for (final s in ref) {
+      e += s.energy;
+      v += s.valence;
+      t += s.tempo;
+      a += s.acousticness;
+      moodCounts[s.mood.index] += 1;
+      langCounts[_languageIndex(s.language)] += 1;
+    }
+    return [
+      e / n,
+      v / n,
+      (t / n - 60) / 120,
+      a / n,
+      ...moodCounts.map((c) => c / n),
+      ...langCounts.map((c) => c / n),
+    ];
+  }
+
+  // ---- Stage 2: contextual re-ranking -------------------------------------
+
+  double _baseScore(Song s, {bool useSessionWeight = false}) {
+    double score = calculateSongScore(s, useSessionWeight: useSessionWeight);
+    score += _calculateMetadataNlpScore(s);
+    if (tasteProfile.isNotInterested(s.id) || tasteProfile.isDisliked(s.id)) {
+      return -1000;
+    }
+    return score;
+  }
+
+  double _timeContextBoost(Song s) {
+    switch (_getTimeContext()) {
+      case 'morning':
+        return s.energy * 20 + s.valence * 15;
+      case 'afternoon':
+        return s.energy * 10;
+      case 'evening':
+        return (1.0 - s.energy) * 10 + s.acousticness * 15;
+      case 'night':
+        return (1.0 - s.energy) * 15 + s.acousticness * 20 + (1.0 - s.valence) * 10;
+      case 'late_night':
+        return s.acousticness * 25 + (1.0 - s.energy) * 20 + (1.0 - s.valence) * 15;
+    }
+    return 0;
+  }
+
+  List<Song> _twoStageCandidates(List<Song> songs, {required int limit}) {
+    final wanted = <Song>{...songs};
+    final candidates = <Song>[];
+    if (_lshIndex != null && _userFactors != null) {
+      final query = _userHybridVector();
+      final probe = (songs.length * 2).clamp(20, 400).toInt();
+      final nn = _lshIndex!.query(query, probe);
+      for (final idx in nn) {
+        if (idx >= 0 && idx < _catalog.length) {
+          final s = _catalog[idx];
+          if (wanted.contains(s)) candidates.add(s);
+        }
+      }
+    }
+    if (candidates.length < limit) {
+      final scored = songs
+          .where((s) => !candidates.contains(s))
+          .map((s) => MapEntry(s, calculateSongScore(s) + _calculateMetadataNlpScore(s)))
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      candidates.addAll(scored.take(limit - candidates.length).map((e) => e.key));
+    }
+    return candidates;
+  }
+
+  Set<int> _unplayedIndicesIn(List<Song> subset) {
+    final played = tasteProfile.recentlyPlayed.toSet();
+    final result = <int>{};
+    for (final s in subset) {
+      final idx = _songIndexById[s.id];
+      if (idx != null && !played.contains(s.id) && !_bandit.isPenalized(idx)) {
+        result.add(idx);
+      }
+    }
+    return result;
+  }
+
+  double _noveltyScore(Song s) {
+    double score = 0;
+    if (tasteProfile.recentlyPlayed.contains(s.id)) {
+      score -= 6;
+    } else {
+      score += 6;
+    }
+    if (tasteProfile.isLiked(s.id)) score -= 3;
+    score += (_songIdHash(s.id) % 8).toDouble();
+    return score;
+  }
+
+  int _songIdHash(String id) {
+    var h = 0;
+    for (final c in id.codeUnits) {
+      h = (h * 31 + c) & 0x7fffffff;
+    }
+    return h;
   }
 
   double calculateSongScore(Song song, {bool useSessionWeight = false}) {
@@ -1333,12 +1648,65 @@ class RecommendationEngine {
   }
 
   List<Song> getRecommendedSongs(List<Song> songs, {int limit = 20, bool useSessionWeight = false}) {
+    if (_modelTrained && _lshIndex != null && _userFactors != null && songs.isNotEmpty) {
+      final candidates = _twoStageCandidates(songs, limit: limit * 2);
+      if (candidates.isNotEmpty) {
+        final unplayed = _unplayedIndicesIn(songs);
+        final baseScores = <int, double>{};
+        final candidateIndices = <int>[];
+        for (final s in candidates) {
+          final idx = _songIndexById[s.id];
+          if (idx != null) {
+            candidateIndices.add(idx);
+            baseScores[idx] = _baseScore(s, useSessionWeight: useSessionWeight) + _timeContextBoost(s);
+          }
+        }
+        final ranked = _bandit.rankAndExploit(
+          candidateIds: candidateIndices,
+          baseScores: baseScores,
+          unplayedCatalogIds: unplayed,
+          epsilon: 0.2,
+        );
+        final ordered = <Song>[];
+        for (final idx in ranked) {
+          if (idx >= 0 && idx < _catalog.length) {
+            final s = _catalog[idx];
+            if (songs.contains(s)) ordered.add(s);
+          }
+          if (ordered.length >= limit) break;
+        }
+        return ordered;
+      }
+    }
     final scoredSongs = songs.map((song) => MapEntry(song, calculateSongScore(song, useSessionWeight: useSessionWeight))).toList();
     scoredSongs.sort((a, b) => b.value.compareTo(a.value));
     return scoredSongs.take(limit).map((e) => e.key).toList();
   }
 
   List<Song> getRecommendedForYou(List<Song> songs) {
+    if (_modelTrained && _lshIndex != null && _userFactors != null) {
+      final candidates = _twoStageCandidates(songs, limit: 60);
+      if (candidates.isNotEmpty) {
+        final exploitOrder = List.of(candidates)
+          ..sort((a, b) => (_baseScore(b) + _timeContextBoost(b)).compareTo(_baseScore(a) + _timeContextBoost(a)));
+        final exploreOrder = List.of(candidates)
+          ..sort((a, b) => _noveltyScore(b).compareTo(_noveltyScore(a)));
+        final ranked = _bandit.interleave(
+          exploitOrder: exploitOrder.map((s) => _songIndexById[s.id]!).toList(),
+          exploreOrder: exploreOrder.map((s) => _songIndexById[s.id]!).toList(),
+        );
+        final seen = <String>{};
+        final result = <Song>[];
+        for (final idx in ranked) {
+          if (idx >= 0 && idx < _catalog.length) {
+            final s = _catalog[idx];
+            if (seen.add(s.id)) result.add(s);
+            if (result.length >= 40) break;
+          }
+        }
+        return result;
+      }
+    }
     final exploitation = getRecommendedSongs(songs, limit: 30);
     final exploration = getExplorationSongs(songs, limit: 10);
     final seen = <String>{};
@@ -1544,6 +1912,28 @@ class RecommendationEngine {
     if (allSongs.isEmpty) return currentSong ?? allSongs.first;
     if (allSongs.length == 1) return allSongs.first;
 
+    if (wasSkipped && currentSong != null) {
+      _applyNegativeOverride(currentSong.id);
+    }
+
+    // Model-based next-track prediction via hybrid ANN in latent space
+    if (_modelTrained && _lshIndex != null && _userFactors != null && currentSong != null) {
+      final query = _userHybridVector();
+      final probe = allSongs.length.clamp(10, 80).toInt();
+      final nn = _lshIndex!.query(query, probe);
+      final recent = tasteProfile.recentlyPlayed.take(5).toSet();
+      for (final idx in nn) {
+        if (idx < 0 || idx >= _catalog.length) continue;
+        final s = _catalog[idx];
+        if (s.id == currentSong.id) continue;
+        if (!allSongs.contains(s)) continue;
+        if (tasteProfile.isNotInterested(s.id)) continue;
+        if (_bandit.isPenalized(idx)) continue;
+        if (recent.contains(s.id) && nn.length > 15) continue;
+        return s;
+      }
+    }
+
     final timeContext = _getTimeContext();
     final isExploration = DateTime.now().millisecond % 5 == 0;
 
@@ -1612,6 +2002,11 @@ class RecommendationEngine {
   }
 
   void populatePlaylistsWithSongs(List<Song> allSongs) {
+    if (!identical(allSongs, _catalog) || _songIndexById.length != allSongs.length) {
+      updateCatalog(allSongs);
+      unawaited(trainCollaborativeModel());
+    }
+
     for (var playlist in _playlists) {
       if (playlist.songIds.isNotEmpty) continue;
 
@@ -2084,6 +2479,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         }
       }
       
+      RecommendationEngine.instance.updateCatalog(allSongs);
+      await RecommendationEngine.instance.trainCollaborativeModel();
+
       final recommended = RecommendationEngine.instance.getRecommendedForYou(allSongs);
       final similar = RecommendationEngine.instance.getSimilarToRecent(allSongs);
       final fansAlso = RecommendationEngine.instance.getFansAlsoLiked(allSongs);
