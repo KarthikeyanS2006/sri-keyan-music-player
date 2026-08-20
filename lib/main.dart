@@ -102,7 +102,19 @@ void main() async {
   } catch (e) {
     debugPrint('Supabase init failed (app will work offline): $e');
   }
-  final audioHandler = await AudioPlayerHandler.init();
+  AudioPlayerHandler audioHandler;
+  try {
+    audioHandler = await AudioPlayerHandler.init().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        debugPrint('Audio service init timed out - continuing without media notification');
+        return AudioPlayerHandler();
+      },
+    );
+  } catch (e) {
+    debugPrint('Audio service init failed (app will work without notification): $e');
+    audioHandler = AudioPlayerHandler();
+  }
   runApp(MusicApp(audioHandler: audioHandler));
 }
 
@@ -1952,6 +1964,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _audioPlayer = _audioHandler.player;
     _audioHandler.onNext = _playNext;
     _audioHandler.onPrevious = _playPrevious;
+    _requestNotificationPermission();
+    _requestStoragePermission();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateDeviceType();
       _loadPreferences();
@@ -2681,6 +2695,26 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     } catch (e) {
       debugPrint('Minimize error: $e');
       if (!kIsWeb) await SystemNavigator.pop();
+    }
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    if (kIsWeb) return;
+    try {
+      const methodChannel = MethodChannel('com.srikeyan.music/permissions');
+      await methodChannel.invokeMethod('requestNotificationsPermission');
+    } catch (e) {
+      debugPrint('Notification permission request error: $e');
+    }
+  }
+
+  Future<void> _requestStoragePermission() async {
+    if (kIsWeb) return;
+    try {
+      const channel = MethodChannel('com.srikeyan.music/permissions');
+      await channel.invokeMethod('requestStoragePermission');
+    } catch (e) {
+      debugPrint('Storage permission request error: $e');
     }
   }
 
