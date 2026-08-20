@@ -378,10 +378,10 @@ class _MusicAppState extends State<MusicApp> {
                   'SRI KEYAN',
                   style: TextStyle(
                     fontSize: 48,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     color: Colors.white,
                     letterSpacing: 8,
-                    fontFamily: 'monospace',
+                    fontFamily: 'BebasNeue',
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1918,8 +1918,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   bool _showFullPlayer = false;
-  String _currentLyrics = '';
-  final ScrollController _lyricsScrollController = ScrollController();
   bool _isDesktop = false;
   bool _isLoadingMore = false;
   int _page = 1;
@@ -1960,7 +1958,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 1, vsync: this);
     _audioPlayer = _audioHandler.player;
     _audioHandler.onNext = _playNext;
     _audioHandler.onPrevious = _playPrevious;
@@ -2109,6 +2107,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   }
 
   Future<void> _initAudio() async {
+    _audioHandler.attachPlayer(_audioPlayer);
     _setupPlayerListeners();
   }
 
@@ -2162,23 +2161,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _playNext();
   }
 
-  Future<void> _fetchLyrics(String songId, String songName) async {
-    try {
-      final lyrics = await JioSaavnApi.getLyrics(songId);
-      if (mounted) {
-        setState(() {
-          _currentLyrics = lyrics.isNotEmpty ? lyrics : '♪ ♫ ♪\n\n$songName\n\n♪ ♫ ♪\n\nLyrics not available';
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _currentLyrics = '♪ ♫ ♪\n\n$songName\n\n♪ ♫ ♪\n\nLyrics not available';
-        });
-      }
-    }
-  }
-
   Future<void> _playSong(int index) async {
     if (index < 0 || index >= _songs.length) return;
     _songCompleteGuard = false;
@@ -2205,11 +2187,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       _isBuffering = true;
       _duration = Duration.zero;
       _position = Duration.zero;
-      _currentLyrics = '';
     });
     
     final song = _songs[index];
-    _fetchLyrics(song.id, song.title);
     _audioHandler.setMediaItem(
       id: song.id,
       title: song.title,
@@ -2374,43 +2354,33 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   Future<void> _playNext() async {
     if (_songs.isEmpty) return;
-    
+
     if (_repeatMode == RepeatMode.one) {
       await _audioPlayer.seek(Duration.zero);
       await _audioPlayer.play();
       return;
     }
 
+    final List<int> order = _shuffleEnabled && _shuffledIndices.isNotEmpty
+        ? List<int>.from(_shuffledIndices)
+        : List<int>.generate(_songs.length, (i) => i);
+
+    final currentPos = order.indexOf(_currentIndex);
     int nextIndex;
-    
-    if (_shuffleEnabled && _shuffledIndices.isNotEmpty) {
-      final currentPos = _shuffledIndices.indexOf(_currentIndex);
-      if (currentPos >= 0 && currentPos < _shuffledIndices.length - 1) {
-        nextIndex = _shuffledIndices[currentPos + 1];
-      } else if (_repeatMode == RepeatMode.all) {
-        nextIndex = _shuffledIndices.first;
-      } else {
-        return;
-      }
+
+    if (currentPos >= 0 && currentPos < order.length - 1) {
+      nextIndex = order[currentPos + 1];
+    } else if (currentPos == order.length - 1 && _repeatMode == RepeatMode.all) {
+      nextIndex = order.first;
+    } else if (currentPos >= 0) {
+      return;
     } else {
-      final wasSkipped = _position.inSeconds < 30 && _duration.inSeconds > 30;
-      final currentSong = _songs[_currentIndex];
-      
-      final smartNext = RecommendationEngine.instance.getSmartNextSong(
-        _songs,
-        currentSong,
-        wasSkipped: wasSkipped,
-      );
-      
-      nextIndex = _songs.indexOf(smartNext);
-      if (nextIndex == -1 || nextIndex == _currentIndex) {
-        nextIndex = _currentIndex + 1;
-        if (nextIndex >= _songs.length) {
-          if (_repeatMode == RepeatMode.all) {
-            nextIndex = 0;
-          } else {
-            return;
-          }
+      nextIndex = _currentIndex + 1;
+      if (nextIndex >= _songs.length) {
+        if (_repeatMode == RepeatMode.all) {
+          nextIndex = 0;
+        } else {
+          return;
         }
       }
     }
@@ -2420,13 +2390,27 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   Future<void> _playPrevious() async {
     if (_position.inSeconds > 3) {
       await _audioPlayer.seek(Duration.zero);
+      return;
+    }
+
+    final List<int> order = _shuffleEnabled && _shuffledIndices.isNotEmpty
+        ? List<int>.from(_shuffledIndices)
+        : List<int>.generate(_songs.length, (i) => i);
+
+    final currentPos = order.indexOf(_currentIndex);
+    int prevIndex;
+
+    if (currentPos > 0) {
+      prevIndex = order[currentPos - 1];
+    } else if (currentPos == 0) {
+      prevIndex = _repeatMode == RepeatMode.all ? order.last : 0;
     } else {
-      int prevIndex = _currentIndex - 1;
+      prevIndex = _currentIndex - 1;
       if (prevIndex < 0) {
         prevIndex = _repeatMode == RepeatMode.all ? _songs.length - 1 : 0;
       }
-      await _playSong(prevIndex);
     }
+    await _playSong(prevIndex);
   }
 
   String _formatDuration(Duration duration) {
@@ -2650,7 +2634,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _searchController.dispose();
     _focusNode.dispose();
     _tabController.dispose();
-    _lyricsScrollController.dispose();
     super.dispose();
   }
 
@@ -2900,6 +2883,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             ),
             const SizedBox(height: 20),
           ],
+          _buildSectionHeader('Your Taste Profile'),
+          const SizedBox(height: 8),
+          _buildTasteProfileCard(),
+          const SizedBox(height: 20),
           if (recentlyPlayed.isNotEmpty) ...[
             _buildSectionHeader('Recently Played', trailing: '${recentlyPlayed.length} songs'),
             const SizedBox(height: 8),
@@ -3066,6 +3053,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               ),
             ),
           ),
+          if (_likedSongs.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ..._songs.where((s) => _likedSongs.contains(s.id)).take(20).toList().asMap().entries.map((entry) {
+              final song = entry.value;
+              final songIdx = _songs.indexOf(song);
+              return _buildSongCard(song, songIdx == _currentIndex, songIdx);
+            }),
+          ],
           const SizedBox(height: 16),
           if (_songs.isNotEmpty) ...[
             _buildSectionHeader('All Songs', trailing: '${_songs.length} songs'),
@@ -3353,21 +3348,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
             ),
             child: Icon(Icons.music_note, color: background, size: 24),
           ),
-          const SizedBox(width: 12),
-          Text(
-            'Sri Keyan',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: textPrimary,
-            ),
-          ),
           const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.library_music),
-            color: accent,
-            onPressed: () => _showPlaylistsSheet(),
-          ),
           ValueListenableBuilder<ThemeMode>(
             valueListenable: AppTheme.controller,
             builder: (context, mode, _) => IconButton(
@@ -3378,29 +3359,28 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               onPressed: () => _cycleTheme(),
             ),
           ),
-          if (RecommendationEngine.instance.tasteProfile.totalInteractions > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.auto_awesome, color: accent, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    'AI',
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          IconButton(
+            icon: const Icon(Icons.library_music),
+            color: accent,
+            onPressed: () => _showPlaylistsSheet(),
+          ),
+          _buildSriKeyanBrand(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSriKeyanBrand({double fontSize = 24}) {
+    return Text.rich(
+      TextSpan(
+        style: TextStyle(
+          fontFamily: 'BebasNeue',
+          fontSize: fontSize,
+          letterSpacing: 1,
+        ),
+        children: [
+          TextSpan(text: 'Sri K', style: const TextStyle(color: Color(0xFFFF6B00))),
+          TextSpan(text: 'eyan', style: TextStyle(color: textPrimary)),
         ],
       ),
     );
@@ -3664,11 +3644,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           _buildHorizontalPlaylistGrid(_playlists),
           const SizedBox(height: 24),
           
-          _buildSectionHeader('Your Taste Profile'),
-          const SizedBox(height: 8),
-          _buildTasteProfileCard(),
-          const SizedBox(height: 24),
-          
           _buildSectionHeader('All Songs', trailing: '${allSongs.length} songs'),
           const SizedBox(height: 8),
           ...allSongs.asMap().entries.map((entry) {
@@ -3830,10 +3805,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                   Text(
                     'SRI KEYAN',
                     style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 12,
                       color: Colors.white.withValues(alpha: 0.3),
                       letterSpacing: 4,
-                      fontFamily: 'monospace',
+                      fontFamily: 'BebasNeue',
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -4728,31 +4703,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       padding: EdgeInsets.fromLTRB(_responsivePadding, 12, _responsivePadding, 8),
       child: Row(
         children: [
-          Text(
-            'Sri Keyan',
-            style: TextStyle(
-              fontSize: 22 * _responsiveFontScale,
-              fontWeight: FontWeight.bold,
-              color: textPrimary,
-            ),
-          ),
+          _buildSriKeyanBrand(fontSize: 24 * _responsiveFontScale),
           const Spacer(),
-          if (RecommendationEngine.instance.tasteProfile.totalInteractions > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.auto_awesome, color: accent, size: 14),
-                  const SizedBox(width: 4),
-                  Text('AI', style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
         ],
       ),
     );
@@ -4898,24 +4850,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                     padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
                     child: Row(
                       children: [
-                        Text('Sri Keyan', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: textPrimary)),
+                        _buildSriKeyanBrand(fontSize: 32),
                         const Spacer(),
-                        if (RecommendationEngine.instance.tasteProfile.totalInteractions > 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.auto_awesome, color: accent, size: 16),
-                                const SizedBox(width: 6),
-                                Text('AI Powered', style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -5067,32 +5003,8 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Row(
         children: [
-          Text(
-            'SRI KEYAN',
-            style: TextStyle(
-              fontSize: 9,
-              color: Colors.white.withValues(alpha: 0.3),
-              letterSpacing: 4,
-              fontFamily: 'monospace',
-            ),
-          ),
+          _buildSriKeyanBrand(fontSize: 20),
           const Spacer(),
-          if (RecommendationEngine.instance.tasteProfile.totalInteractions > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.auto_awesome, color: Colors.white.withValues(alpha: 0.5), size: 10),
-                  const SizedBox(width: 4),
-                  Text('AI', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 9, fontFamily: 'monospace')),
-                ],
-              ),
-            ),
           const SizedBox(width: 12),
           ValueListenableBuilder<ThemeMode>(
             valueListenable: AppTheme.controller,
@@ -5132,11 +5044,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                 Text(
                   'SRI KEYAN',
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                     color: Colors.white,
                     letterSpacing: 2,
-                    fontFamily: 'monospace',
+                    fontFamily: 'BebasNeue',
                   ),
                 ),
                 const Spacer(),
@@ -5224,10 +5136,10 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
               unselectedLabelColor: Colors.white.withValues(alpha: 0.3),
               dividerColor: Colors.transparent,
               labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              tabs: const [Tab(text: 'Lyrics'), Tab(text: 'Details')],
+              tabs: const [Tab(text: 'Details')],
             ),
           ),
-          SizedBox(height: 280, child: TabBarView(controller: _tabController, children: [_buildLyricsTab(), _buildSongDetailsTab(song)])),
+          SizedBox(height: 280, child: TabBarView(controller: _tabController, children: [_buildSongDetailsTab(song)])),
         ],
       ),
     );
@@ -5570,38 +5482,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     );
   }
 
-  Widget _buildLyricsTab() {
-    return Container(
-      margin: const EdgeInsets.all(20),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(12)),
-      child: _currentLyrics.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.lyrics_outlined, size: 40, color: Colors.white.withValues(alpha: 0.1)),
-                  const SizedBox(height: 12),
-                  Text('No lyrics available', style: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 12)),
-                ],
-              ),
-            )
-          : SingleChildScrollView(
-              controller: _lyricsScrollController,
-              child: Text(
-                _currentLyrics,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.white.withValues(alpha: 0.7),
-                  height: 2.0,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ),
-    );
-  }
-
   Widget _buildSongDetailsTab(Song song) {
     return Container(
       margin: const EdgeInsets.all(20),
@@ -5766,14 +5646,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                     dividerColor: Colors.transparent,
                     labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                     unselectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
-                    tabs: const [Tab(text: 'Lyrics'), Tab(text: 'Details')],
+                    tabs: const [Tab(text: 'Details')],
                   ),
                 ),
                 SizedBox(
                   height: _isTV ? 350 : _isDesktop ? 300 : 250,
                   child: TabBarView(
                     controller: _tabController,
-                    children: [_buildLyricsTab(), _buildSongDetailsTab(song)],
+                    children: [_buildSongDetailsTab(song)],
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -5885,28 +5765,5 @@ class JioSaavnApi {
 
   static Future<List<Song>> search(String query) async {
     return _fetchSongs('result/?query=${Uri.encodeComponent(query)}');
-  }
-
-  static Future<String> getLyrics(String songId) async {
-    final List<String> apiUrls = _useSelfHosted
-        ? [_selfHostedUrl, _apiUrl]
-        : [_apiUrl, _selfHostedUrl];
-
-    for (var baseUrl in apiUrls) {
-      try {
-        final response = await http.get(
-          Uri.parse('$baseUrl/lyrics/?id=$songId'),
-          headers: {'Accept': 'application/json'},
-        ).timeout(const Duration(seconds: 8));
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          return data['lyrics'] ?? '';
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-    return '';
   }
 }
