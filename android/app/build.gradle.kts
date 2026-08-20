@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.srikeyan.music"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "28.2.13676358"
 
     compileOptions {

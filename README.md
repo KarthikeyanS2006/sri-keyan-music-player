@@ -15,18 +15,11 @@ Developed by **[Karthikeyan S](https://github.com/KarthikeyanS2006)**
 
 [![APK Build](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml/badge.svg)](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)
 
-| | |
-|---|---|
-| **Download APK** | **[`app-release.apk`](https://github.com/KarthikeyanS2006/sri-keyan-music-player/releases/latest)** |
-| **Workflow** | [Build Android APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml) |
-
-#### How to Install
-1. Click **[Download APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/releases/latest)** above
-2. Click **`app-release.apk`** to download
-3. Open the APK and enable **Install from unknown sources**
-4. Install and enjoy!
-
-> Always gets the **latest build** — link auto-updates on every push.
+1. Go to **[Actions > Build Android APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
+2. Click the latest successful workflow run (green checkmark)
+3. Scroll down to **Artifacts**
+4. Download **`keyan-music-release-apk`**
+5. Install the APK (enable "Install from unknown sources" if needed)
 
 ### Live Web App
 
