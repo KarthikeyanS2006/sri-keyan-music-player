@@ -11,6 +11,7 @@ import 'dart:io';
 import 'dart:ui' show ImageFilter;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase/supabase.dart';
 import 'package:uuid/uuid.dart';
 import 'audio_handler.dart';
@@ -1967,6 +1968,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateDeviceType();
       _loadPreferences();
+      _checkForUpdate();
     });
     _loadSongs();
   }
@@ -2699,6 +2701,125 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     } catch (e) {
       debugPrint('Storage permission request error: $e');
     }
+  }
+
+  static const String _githubRepo = 'KarthikeyanS2006/sri-keyan-music-player';
+
+  Future<void> _checkForUpdate() async {
+    if (kIsWeb) return;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final response = await http
+          .get(
+            Uri.parse('https://api.github.com/repos/$_githubRepo/releases/latest'),
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'keyan-music',
+            },
+          )
+          .timeout(const Duration(seconds: 12));
+
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final tag = (data['tag_name'] as String?) ?? '';
+      final latestVersion = tag.replaceFirst(RegExp(r'^v'), '');
+
+      if (latestVersion.isEmpty) return;
+      if (!_isNewerVersion(latestVersion, info.version)) return;
+
+      String apkUrl = '';
+      if (data['assets'] is List) {
+        for (final asset in data['assets'] as List) {
+          final name = (asset as Map<String, dynamic>)['name'] as String? ?? '';
+          if (name.endsWith('.apk')) {
+            apkUrl = asset['browser_download_url'] as String? ?? '';
+            break;
+          }
+        }
+      }
+      if (apkUrl.isEmpty) {
+        apkUrl = data['html_url'] as String? ?? '';
+      }
+      if (apkUrl.isEmpty) return;
+
+      final releaseNotes = (data['body'] as String?) ?? '';
+
+      if (mounted) {
+        _showUpdateDialog(latestVersion, apkUrl, releaseNotes);
+      }
+    } catch (e) {
+      debugPrint('Update check failed: $e');
+    }
+  }
+
+  bool _isNewerVersion(String latest, String current) {
+    List<int> parse(String v) =>
+        v.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+    final a = parse(latest);
+    final b = parse(current);
+    final len = a.length > b.length ? a.length : b.length;
+    for (var i = 0; i < len; i++) {
+      final av = i < a.length ? a[i] : 0;
+      final bv = i < b.length ? b[i] : 0;
+      if (av != bv) return av > bv;
+    }
+    return false;
+  }
+
+  void _showUpdateDialog(String version, String apkUrl, String releaseNotes) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        backgroundColor: surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.system_update_alt, color: Color(0xFFFF6B00)),
+            const SizedBox(width: 8),
+            Text('Update Available', style: TextStyle(color: textPrimary)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Keyan Music v$version is now available.',
+              style: TextStyle(color: textPrimary, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'A new version of the app has been released. Update now to get the latest features and fixes.',
+              style: TextStyle(color: textSecondary, fontSize: 13),
+            ),
+            if (releaseNotes.trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                releaseNotes.trim(),
+                style: TextStyle(color: textSecondary, fontSize: 12),
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Later', style: TextStyle(color: textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              launchUrl(Uri.parse(apkUrl), mode: LaunchMode.externalApplication);
+            },
+            child: Text('Update Now', style: TextStyle(color: const Color(0xFFFF6B00), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
@@ -3714,7 +3835,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: () async {
-                      final url = Uri.parse('https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml');
+                      final url = Uri.parse('https://github.com/KarthikeyanS2006/sri-keyan-music-player/releases/latest');
                       if (await canLaunchUrl(url)) {
                         await launchUrl(url, mode: LaunchMode.externalApplication);
                       }

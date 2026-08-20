@@ -13,13 +13,13 @@ Developed by **[Karthikeyan S](https://github.com/KarthikeyanS2006)**
 
 ### Android APK
 
-[![APK Build](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml/badge.svg)](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)
+[![Latest Release](https://img.shields.io/github/v/release/KarthikeyanS2006/sri-keyan-music-player?label=Latest%20Release)](https://github.com/KarthikeyanS2006/sri-keyan-music-player/releases/latest)
 
-1. Go to **[Actions > Build Android APK](https://github.com/KarthikeyanS2006/sri-keyan-music-player/actions/workflows/android.yml)**
-2. Click the latest successful workflow run (green checkmark)
-3. Scroll down to **Artifacts**
-4. Download **`keyan-music-release-apk`**
-5. Install the APK (enable "Install from unknown sources" if needed)
+1. Go to **[Releases](https://github.com/KarthikeyanS2006/sri-keyan-music-player/releases/latest)**
+2. Download the latest **`KeyanMusic-vX.Y.Z.apk`**
+3. Install the APK (enable "Install from unknown sources" if needed)
+
+> The app checks for new releases on startup and shows an in-app update notification. New releases are published version-by-version from the **Release APK** workflow.
 
 ### Live Web App
 
