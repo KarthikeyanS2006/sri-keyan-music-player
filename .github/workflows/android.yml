@@ -41,67 +41,111 @@ jobs:
       - name: Build Release APK
         run: flutter build apk --release
 
-      - name: Upload APK Artifact
-        id: upload-apk
+      - name: Get APK info
+        id: apk-info
+        run: |
+          SIZE=$(stat --printf="%s" build/app/outputs/flutter-apk/app-release.apk)
+          SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
+          echo "size=${SIZE_MB} MB" >> "$GITHUB_OUTPUT"
+          echo "bytes=${SIZE}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK Artifact (backup)
         uses: actions/upload-artifact@v4
         with:
           name: keyan-music-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
-      - name: Get APK size
-        id: apk-size
+      - name: Delete old release if exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SIZE=$(stat --printf="%s" build/app/outputs/flutter-apk/app-release.apk)
-          SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
-          echo "size=${SIZE_MB} MB" >> "$GITHUB_OUTPUT"
+          RELEASE_TAG="v$(date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          # Delete any existing pre-release with 'latest' tag
+          gh release delete "latest" --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Update README with APK link
+      - name: Create GitHub Release with APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          RUN_ID="${{ github.run_id }}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          BUILD_DATE="$(date -u +%Y-%m-%d)"
+          APK_SIZE="${{ steps.apk-info.outputs.size }}"
+
+          # Create release with APK attached
+          gh release create "latest" \
+            build/app/outputs/flutter-apk/app-release.apk \
+            --repo "${REPO}" \
+            --title "Keyan Music v${BUILD_DATE}" \
+            --notes "## Keyan Music - Latest Build
+
+          **Build Date:** ${BUILD_DATE}
+          **Commit:** \`${SHORT_SHA}\`
+          **APK Size:** ${APK_SIZE}
+          **Workflow Run:** [#${RUN_ID}](https://github.com/${REPO}/actions/runs/${RUN_ID})
+
+          ### Install
+          1. Download \`app-release.apk\` below
+          2. Open the APK on your Android device
+          3. Enable **Install from unknown sources** if prompted
+          4. Install and enjoy!" \
+            --latest
+
+      - name: Get release download URL
+        id: release-url
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          DOWNLOAD_URL=$(gh release view "latest" --repo "${REPO}" --json assets --jq '.assets[0].url')
+          BROWSER_URL="https://github.com/${REPO}/releases/latest"
+          echo "download_url=${DOWNLOAD_URL}" >> "$GITHUB_OUTPUT"
+          echo "browser_url=${BROWSER_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Update README with release link
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const readme = fs.readFileSync('README.md', 'utf8');
 
-            const runId = context.runId;
             const repo = context.repo.owner + '/' + context.repo.repo;
-            const artifactUrl = `https://github.com/${repo}/actions/runs/${runId}/artifacts/${context.payload.workflow_run ? 'latest' : '${{ steps.upload-apk.outputs.artifact-id }}'}`;
-            const artifactId = '${{ steps.upload-apk.outputs.artifact-id }}';
-            const apkSize = '${{ steps.apk-size.outputs.size }}';
-            const buildDate = new Date().toISOString().split('T')[0];
+            const runId = context.runId;
             const shortSha = context.sha.substring(0, 7);
+            const buildDate = new Date().toISOString().split('T')[0];
+            const apkSize = '${{ steps.apk-info.outputs.size }}';
+            const releaseUrl = `https://github.com/${repo}/releases/latest`;
             const workflowUrl = `https://github.com/${repo}/actions/workflows/android.yml`;
 
-            const directLink = `https://github.com/${repo}/actions/runs/${runId}/artifacts/${artifactId}`;
-
-            // Build the new download section
             const newDownloadSection = `### Android APK
 
-[![APK Build](https://github.com/${repo}/actions/workflows/android.yml/badge.svg)](${workflowUrl})
+[![APK Build](${workflowUrl}/badge.svg)](${workflowUrl})
 
 | | |
 |---|---|
-| **Latest APK** | [\`keyan-music-release-apk\`](${directLink}) |
+| **Download APK** | **[\`app-release.apk\`](${releaseUrl})** |
 | **Size** | ${apkSize} |
 | **Built** | ${buildDate} |
 | **Commit** | [\`${shortSha}\`](https://github.com/${repo}/commit/${context.sha}) |
 | **Workflow** | [Run #${runId}](${workflowUrl}) |
 
 #### How to Install
-1. Click **[\`keyan-music-release-apk\`](${directLink})** above
-2. Click the **download icon** (arrow) on the artifact page
-3. Open the downloaded APK and enable **Install from unknown sources**
+1. Click **[\`Download APK\`](${releaseUrl})** above
+2. Click **\`app-release.apk\`** to download
+3. Open the APK and enable **Install from unknown sources**
 4. Install and enjoy!
 
-> **Note:** Artifact links are available for **90 days** after the build.`;
+> Always gets the **latest build** — link auto-updates on every push.`;
 
-            // Replace the download section in README
             const downloadRegex = /### Android APK\n[\s\S]*?(?=### Live Web App)/;
             const updated = readme.replace(downloadRegex, newDownloadSection + '\n\n');
 
             if (updated !== readme) {
               fs.writeFileSync('README.md', updated);
-              console.log('README updated with APK artifact link');
+              console.log('README updated with release download link');
             } else {
               console.log('README already up to date');
             }
@@ -111,5 +155,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add README.md
-          git diff --staged --quiet || git commit -m "docs: update README with APK artifact [skip ci]"
+          git diff --staged --quiet || git commit -m "docs: update README with latest APK release link [skip ci]"
           git push
