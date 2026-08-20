@@ -47,7 +47,6 @@ jobs:
           SIZE=$(stat --printf="%s" build/app/outputs/flutter-apk/app-release.apk)
           SIZE_MB=$(echo "scale=2; $SIZE / 1048576" | bc)
           echo "size=${SIZE_MB} MB" >> "$GITHUB_OUTPUT"
-          echo "bytes=${SIZE}" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK Artifact (backup)
         uses: actions/upload-artifact@v4
@@ -56,99 +55,59 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
-      - name: Delete old release if exists
+      - name: Delete old release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RELEASE_TAG="v$(date +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"
-          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
-          # Delete any existing pre-release with 'latest' tag
-          gh release delete "latest" --yes --cleanup-tag 2>/dev/null || true
+        run: gh release delete "latest" --yes --cleanup-tag 2>/dev/null || true
 
       - name: Create GitHub Release with APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          REPO="${{ github.repository }}"
-          RUN_ID="${{ github.run_id }}"
-          SHORT_SHA="${GITHUB_SHA::7}"
           BUILD_DATE="$(date -u +%Y-%m-%d)"
+          SHORT_SHA="${GITHUB_SHA::7}"
           APK_SIZE="${{ steps.apk-info.outputs.size }}"
-
-          # Create release with APK attached
+          NOTES="Keyan Music - Latest Build\n\nBuild Date: ${BUILD_DATE}\nCommit: ${SHORT_SHA}\nAPK Size: ${APK_SIZE}\n\nDownload app-release.apk below and enable Install from unknown sources."
           gh release create "latest" \
             build/app/outputs/flutter-apk/app-release.apk \
-            --repo "${REPO}" \
-            --title "Keyan Music v${BUILD_DATE}" \
-            --notes "## Keyan Music - Latest Build
-
-          **Build Date:** ${BUILD_DATE}
-          **Commit:** \`${SHORT_SHA}\`
-          **APK Size:** ${APK_SIZE}
-          **Workflow Run:** [#${RUN_ID}](https://github.com/${REPO}/actions/runs/${RUN_ID})
-
-          ### Install
-          1. Download \`app-release.apk\` below
-          2. Open the APK on your Android device
-          3. Enable **Install from unknown sources** if prompted
-          4. Install and enjoy!" \
+            --repo "${{ github.repository }}" \
+            --title "Keyan Music ${BUILD_DATE}" \
+            --notes "$(echo -e "${NOTES}")" \
             --latest
 
-      - name: Get release download URL
-        id: release-url
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update README
         run: |
+          BUILD_DATE="$(date -u +%Y-%m-%d)"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          APK_SIZE="${{ steps.apk-info.outputs.size }}"
           REPO="${{ github.repository }}"
-          DOWNLOAD_URL=$(gh release view "latest" --repo "${REPO}" --json assets --jq '.assets[0].url')
-          BROWSER_URL="https://github.com/${REPO}/releases/latest"
-          echo "download_url=${DOWNLOAD_URL}" >> "$GITHUB_OUTPUT"
-          echo "browser_url=${BROWSER_URL}" >> "$GITHUB_OUTPUT"
+          RELEASE_URL="https://github.com/${REPO}/releases/latest"
+          WORKFLOW_URL="https://github.com/${REPO}/actions/workflows/android.yml"
 
-      - name: Update README with release link
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const readme = fs.readFileSync('README.md', 'utf8');
-
-            const repo = context.repo.owner + '/' + context.repo.repo;
-            const runId = context.runId;
-            const shortSha = context.sha.substring(0, 7);
-            const buildDate = new Date().toISOString().split('T')[0];
-            const apkSize = '${{ steps.apk-info.outputs.size }}';
-            const releaseUrl = `https://github.com/${repo}/releases/latest`;
-            const workflowUrl = `https://github.com/${repo}/actions/workflows/android.yml`;
-
-            const newDownloadSection = `### Android APK
-
-[![APK Build](${workflowUrl}/badge.svg)](${workflowUrl})
-
-| | |
-|---|---|
-| **Download APK** | **[\`app-release.apk\`](${releaseUrl})** |
-| **Size** | ${apkSize} |
-| **Built** | ${buildDate} |
-| **Commit** | [\`${shortSha}\`](https://github.com/${repo}/commit/${context.sha}) |
-| **Workflow** | [Run #${runId}](${workflowUrl}) |
-
-#### How to Install
-1. Click **[\`Download APK\`](${releaseUrl})** above
-2. Click **\`app-release.apk\`** to download
-3. Open the APK and enable **Install from unknown sources**
-4. Install and enjoy!
-
-> Always gets the **latest build** — link auto-updates on every push.`;
-
-            const downloadRegex = /### Android APK\n[\s\S]*?(?=### Live Web App)/;
-            const updated = readme.replace(downloadRegex, newDownloadSection + '\n\n');
-
-            if (updated !== readme) {
-              fs.writeFileSync('README.md', updated);
-              console.log('README updated with release download link');
-            } else {
-              console.log('README already up to date');
-            }
+          python3 -c "
+          import re, sys
+          with open('README.md', 'r') as f:
+              content = f.read()
+          section = '### Android APK\n\n'
+          section += '[![APK Build](' + '${WORKFLOW_URL}' + '/badge.svg)](' + '${WORKFLOW_URL}' + ')\n\n'
+          section += '| | |\n'
+          section += '|---|---|\n'
+          section += '| **Download APK** | **[app-release.apk](' + '${RELEASE_URL}' + ')** |\n'
+          section += '| **Size** | ' + '${APK_SIZE}' + ' |\n'
+          section += '| **Built** | ' + '${BUILD_DATE}' + ' |\n'
+          section += '| **Commit** | [' + '${SHORT_SHA}' + '](https://github.com/${REPO}/commit/' + '${GITHUB_SHA}' + ') |\n\n'
+          section += '#### How to Install\n'
+          section += '1. Click **[Download APK](' + '${RELEASE_URL}' + ')** above\n'
+          section += '2. Click **app-release.apk** to download\n'
+          section += '3. Open the APK and enable Install from unknown sources\n'
+          section += '4. Install and enjoy!\n\n'
+          section += '> Always gets the latest build - link auto-updates on every push.\n\n'
+          pattern = r'### Android APK\n\n.*?(?=### Live Web App)'
+          updated = re.sub(pattern, section, content, flags=re.DOTALL)
+          with open('README.md', 'w') as f:
+              f.write(updated)
+          print('README updated')
+          "
 
       - name: Commit updated README
         run: |
