@@ -105,13 +105,7 @@ void main() async {
   }
   AudioPlayerHandler audioHandler;
   try {
-    audioHandler = await AudioPlayerHandler.init().timeout(
-      const Duration(seconds: 8),
-      onTimeout: () {
-        debugPrint('Audio service init timed out - continuing without media notification');
-        return AudioPlayerHandler();
-      },
-    );
+    audioHandler = await AudioPlayerHandler.init();
   } catch (e) {
     debugPrint('Audio service init failed (app will work without notification): $e');
     audioHandler = AudioPlayerHandler();
@@ -1927,6 +1921,9 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   List<String> _selectedLanguages = [];
   List<String> _selectedGenres = [];
   final Set<String> _likedSongs = {};
+  final List<StreamSubscription<Duration?>> _durationSubs = [];
+  final List<StreamSubscription<Duration>> _positionSubs = [];
+  final List<StreamSubscription<PlayerState>> _stateSubs = [];
   final Set<String> _showOptionsForSong = {};
   List<MusicPlaylist> _playlists = [];
   
@@ -2114,19 +2111,26 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   }
 
   void _setupPlayerListeners() {
-    _audioPlayer.durationStream.listen((duration) {
+    for (final sub in _durationSubs) { sub.cancel(); }
+    for (final sub in _positionSubs) { sub.cancel(); }
+    for (final sub in _stateSubs) { sub.cancel(); }
+    _durationSubs.clear();
+    _positionSubs.clear();
+    _stateSubs.clear();
+
+    _durationSubs.add(_audioPlayer.durationStream.listen((duration) {
       if (mounted && duration != null && duration.inSeconds > 0) {
         setState(() => _duration = duration);
       }
-    });
+    }));
 
-    _audioPlayer.positionStream.listen((position) {
+    _positionSubs.add(_audioPlayer.positionStream.listen((position) {
       if (mounted) {
         setState(() => _position = position);
       }
-    });
+    }));
 
-    _audioPlayer.playerStateStream.listen((state) {
+    _stateSubs.add(_audioPlayer.playerStateStream.listen((state) {
       if (mounted) {
         setState(() {
           _isPlaying = state.playing;
@@ -2141,7 +2145,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           }
         });
       }
-    });
+    }));
   }
 
   void _onSongComplete() {

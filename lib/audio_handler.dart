@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   AudioPlayer _player = AudioPlayer();
+  StreamSubscription? _playbackSub;
 
   Future<void> Function()? onNext;
   Future<void> Function()? onPrevious;
@@ -13,8 +15,9 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   AudioPlayer get player => _player;
 
   void attachPlayer(AudioPlayer audioPlayer) {
+    _playbackSub?.cancel();
     _player = audioPlayer;
-    _player.playbackEventStream.listen((_) {
+    _playbackSub = _player.playbackEventStream.listen((_) {
       _broadcastState();
     });
   }
@@ -72,13 +75,20 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       album: album,
       artUri: artUri.isNotEmpty ? Uri.parse(artUri) : null,
     ));
+    _broadcastState();
   }
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    await _player.play();
+    _broadcastState();
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    await _player.pause();
+    _broadcastState();
+  }
 
   @override
   Future<void> stop() async {
