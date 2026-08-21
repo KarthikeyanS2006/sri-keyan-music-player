@@ -16,6 +16,7 @@ import 'package:supabase/supabase.dart';
 import 'package:uuid/uuid.dart';
 import 'audio_handler.dart';
 import 'download_helper.dart';
+import 'widget_helper.dart';
 
 class ThemeController extends ValueNotifier<ThemeMode> {
   ThemeController() : super(ThemeMode.system) {
@@ -1932,7 +1933,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   final List<StreamSubscription<Duration?>> _durationSubs = [];
   final List<StreamSubscription<Duration>> _positionSubs = [];
   final List<StreamSubscription<PlayerState>> _stateSubs = [];
-  final Set<String> _showOptionsForSong = {};
   List<MusicPlaylist> _playlists = [];
   
   Timer? _searchDebounce;
@@ -1977,6 +1977,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _audioHandler.onPrevious = _playPrevious;
     _requestNotificationPermission();
     _requestStoragePermission();
+    _setupWidgetChannel();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateDeviceType();
       _loadPreferences();
@@ -2138,6 +2139,28 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     _setupPlayerListeners();
   }
 
+  void _setupWidgetChannel() {
+    if (!kIsWeb) {
+      const channel = MethodChannel('com.srikeyan.music/widget');
+      channel.setMethodCallHandler((call) async {
+        if (call.method == 'onWidgetAction') {
+          final action = call.arguments as String;
+          switch (action) {
+            case 'play_pause':
+              await _togglePlayPause();
+              break;
+            case 'next':
+              await _playNext();
+              break;
+            case 'previous':
+              await _playPrevious();
+              break;
+          }
+        }
+      });
+    }
+  }
+
   void _setupPlayerListeners() {
     for (final sub in _durationSubs) { sub.cancel(); }
     for (final sub in _positionSubs) { sub.cancel(); }
@@ -2265,6 +2288,12 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           await _audioPlayer.play();
           await _audioPlayer.setVolume(_volume);
           played = true;
+          WidgetHelper.updateWidget(
+            title: song.title,
+            artist: song.artist,
+            isPlaying: true,
+            imageUrl: song.imageUrl,
+          );
           break;
         } catch (e) {
           debugPrint('Failed URL $playUrl: $e');
@@ -2304,6 +2333,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       await _audioPlayer.pause();
     } else {
       await _audioPlayer.play();
+    }
+    if (_currentIndex >= 0 && _currentIndex < _songs.length) {
+      WidgetHelper.updateWidget(
+        title: _songs[_currentIndex].title,
+        artist: _songs[_currentIndex].artist,
+        isPlaying: !_isPlaying,
+        imageUrl: _songs[_currentIndex].imageUrl,
+      );
     }
   }
 
@@ -4986,7 +5023,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   Widget _buildSongCard(Song song, bool isSelected, int index) {
     final isLiked = _likedSongs.contains(song.id);
-    final showOptions = _showOptionsForSong.contains(song.id);
     final artSize = _songCardArtSize;
     
     return GestureDetector(

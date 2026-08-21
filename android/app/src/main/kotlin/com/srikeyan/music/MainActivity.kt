@@ -16,7 +16,9 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL_DOWNLOADS = "com.srikeyan.music/downloads"
     private val CHANNEL_MINIMIZE = "com.srikeyan.music/minimize"
     private val CHANNEL_PERMISSIONS = "com.srikeyan.music/permissions"
+    private val CHANNEL_WIDGET = "com.srikeyan.music/widget"
     private val PERMISSION_REQUEST_CODE = 1001
+    private var widgetChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -70,6 +72,32 @@ class MainActivity : FlutterActivity() {
                     result.success(granted)
                 }
                 else -> result.notImplemented()
+            }
+        }
+
+        widgetChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_WIDGET)
+
+        handleWidgetIntent(intent)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleWidgetIntent(intent)
+    }
+
+    private fun handleWidgetIntent(intent: android.content.Intent?) {
+        val action = intent?.getStringExtra("widget_action")
+        if (action != null) {
+            intent.removeExtra("widget_action")
+            val flutterAction = when (action) {
+                "com.srikeyan.music.ACTION_PLAY_PAUSE" -> "play_pause"
+                "com.srikeyan.music.ACTION_NEXT" -> "next"
+                "com.srikeyan.music.ACTION_PREV" -> "previous"
+                else -> null
+            }
+            if (flutterAction != null) {
+                widgetChannel?.invokeMethod("onWidgetAction", flutterAction)
             }
         }
     }
