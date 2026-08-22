@@ -26,7 +26,7 @@ class WidgetHelper {
 
       await HomeWidget.saveWidgetData(_prefKeyTitle, title);
       await HomeWidget.saveWidgetData(_prefKeyArtist, artist);
-      await HomeWidget.saveWidgetData(_prefKeyIsPlaying, isPlaying.toString());
+      await HomeWidget.saveWidgetData(_prefKeyIsPlaying, isPlaying);
       if (localArtUri != null) {
         await HomeWidget.saveWidgetData(_prefKeyArtUri, localArtUri);
       }
@@ -42,17 +42,14 @@ class WidgetHelper {
 
   static Future<String?> _downloadAndCacheImage(String imageUrl) async {
     try {
-      final dir = await getTemporaryDirectory();
+      final dir = await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/widget_album_art.jpg');
-      if (!await file.exists()) {
-        final response = await http.get(Uri.parse(imageUrl));
-        if (response.statusCode == 200) {
-          await file.writeAsBytes(response.bodyBytes);
-        } else {
-          return null;
-        }
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200) {
+        await file.writeAsBytes(response.bodyBytes);
+        return file.path;
       }
-      return file.path;
+      return null;
     } catch (e) {
       debugPrint('Widget image cache error: $e');
       return null;

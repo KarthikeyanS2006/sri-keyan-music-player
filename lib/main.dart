@@ -2158,6 +2158,23 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
           }
         }
       });
+      channel.invokeMethod('getPendingWidgetAction').then((action) {
+        if (action != null && action is String) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            switch (action) {
+              case 'play_pause':
+                await _togglePlayPause();
+                break;
+              case 'next':
+                await _playNext();
+                break;
+              case 'previous':
+                await _playPrevious();
+                break;
+            }
+          });
+        }
+      }).catchError((_) {});
     }
   }
 

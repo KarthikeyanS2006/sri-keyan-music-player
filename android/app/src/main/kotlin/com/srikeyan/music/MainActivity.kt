@@ -1,4 +1,4 @@
-package com.srikeyan.music
+﻿package com.srikeyan.music
 
 import android.Manifest
 import android.content.ContentValues
@@ -19,6 +19,7 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL_WIDGET = "com.srikeyan.music/widget"
     private val PERMISSION_REQUEST_CODE = 1001
     private var widgetChannel: MethodChannel? = null
+    private var pendingWidgetAction: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -76,6 +77,16 @@ class MainActivity : FlutterActivity() {
         }
 
         widgetChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_WIDGET)
+        widgetChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getPendingWidgetAction" -> {
+                    val action = pendingWidgetAction
+                    pendingWidgetAction = null
+                    result.success(action)
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         handleWidgetIntent(intent)
     }
@@ -97,7 +108,11 @@ class MainActivity : FlutterActivity() {
                 else -> null
             }
             if (flutterAction != null) {
-                widgetChannel?.invokeMethod("onWidgetAction", flutterAction)
+                if (widgetChannel != null) {
+                    widgetChannel?.invokeMethod("onWidgetAction", flutterAction)
+                } else {
+                    pendingWidgetAction = flutterAction
+                }
             }
         }
     }

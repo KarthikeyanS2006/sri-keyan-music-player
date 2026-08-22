@@ -6,9 +6,8 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.graphics.BitmapFactory
 import android.widget.RemoteViews
-import es.antonborri.home_widget.HomeWidgetPlugin
 
 class MusicWidgetProvider : AppWidgetProvider() {
 
@@ -19,6 +18,16 @@ class MusicWidgetProvider : AppWidgetProvider() {
     ) {
         for (appWidgetId in appWidgetIds) {
             updateWidget(context, appWidgetManager, appWidgetId)
+        }
+    }
+
+    override fun onEnabled(context: Context) {
+        super.onEnabled(context)
+        val manager = AppWidgetManager.getInstance(context)
+        val componentName = ComponentName(context, MusicWidgetProvider::class.java)
+        val ids = manager.getAppWidgetIds(componentName)
+        for (id in ids) {
+            updateWidget(context, manager, id)
         }
     }
 
@@ -34,7 +43,7 @@ class MusicWidgetProvider : AppWidgetProvider() {
             val title = prefs.getString("widget_title", "Not Playing") ?: "Not Playing"
             val artist = prefs.getString("widget_artist", "Sri Keyan Music") ?: "Sri Keyan Music"
             val isPlaying = prefs.getBoolean("widget_is_playing", false)
-            val artUri = prefs.getString("widget_art_uri", null)
+            val artPath = prefs.getString("widget_art_uri", null)
 
             views.setTextViewText(R.id.widget_title, title)
             views.setTextViewText(R.id.widget_artist, artist)
@@ -45,10 +54,12 @@ class MusicWidgetProvider : AppWidgetProvider() {
                 views.setImageViewResource(R.id.widget_play_pause, android.R.drawable.ic_media_play)
             }
 
-            if (!artUri.isNullOrEmpty()) {
+            if (!artPath.isNullOrEmpty()) {
                 try {
-                    val uri = Uri.parse(artUri)
-                    views.setImageViewUri(R.id.widget_album_art, uri)
+                    val bitmap = BitmapFactory.decodeFile(artPath)
+                    if (bitmap != null) {
+                        views.setImageViewBitmap(R.id.widget_album_art, bitmap)
+                    }
                 } catch (_: Exception) {}
             }
 
