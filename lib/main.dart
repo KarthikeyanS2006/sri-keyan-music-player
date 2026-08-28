@@ -1958,7 +1958,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   double _volume = 1.0;
   double _crossfadeDuration = 0.0;
   List<Song> _userQueue = [];
-  bool _isPlayingSong = false;
+  int _playRequestId = 0;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get accent => _isDark ? AppTheme.accent : AppTheme.accentLight;
@@ -2264,89 +2264,88 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   Future<void> _playSong(int index) async {
     _crossfadeTriggered = false;
-    if (_isPlayingSong) return;
+    final requestId = ++_playRequestId;
     if (index < 0 || index >= _songs.length) return;
-    _isPlayingSong = true;
     _songCompleteGuard = false;
     _searchDebounce?.cancel();
-    
+
     try {
-    
-    if (_currentIndex >= 0 && _currentIndex < _songs.length && _position.inSeconds > 5) {
-      final prevSong = _songs[_currentIndex];
-      final watchDuration = _position.inSeconds;
-      
-      RecommendationEngine.instance.recordInteraction(SongInteraction(
-        songId: prevSong.id,
-        artist: prevSong.artist,
-        language: prevSong.language,
-        type: watchDuration < 30 ? InteractionType.skip : InteractionType.watch,
-        watchDuration: watchDuration,
-        totalDuration: _duration.inSeconds > 0 ? _duration.inSeconds : int.tryParse(prevSong.duration) ?? 0,
-        timestamp: DateTime.now(),
-        isSession: true,
-      ));
-    }
-    
-    setState(() {
-      _currentIndex = index;
-      _isBuffering = true;
-      _duration = Duration.zero;
-      _position = Duration.zero;
-    });
-    
-    final song = _songs[index];
-    
-    if (song.audioUrl.isNotEmpty) {
-      bool played = false;
-      for (final playUrl in JioSaavnApi.getPlayableUrls(song.audioUrl)) {
-        try {
-          debugPrint('Trying URL: $playUrl');
-          await _audioPlayer.stop();
-          await _audioPlayer.setUrl(playUrl).timeout(const Duration(seconds: 20));
-          await _audioPlayer.play();
-          await _audioPlayer.setVolume(_volume);
-          played = true;
-          _audioHandler.setMediaItem(
-            id: song.id,
-            title: song.title,
-            artist: song.artist,
-            album: song.album,
-            artUri: song.imageUrl,
-          );
-          WidgetHelper.updateWidget(
-            title: song.title,
-            artist: song.artist,
-            isPlaying: true,
-            imageUrl: song.imageUrl,
-          );
-          break;
-        } catch (e) {
-          debugPrint('Failed URL $playUrl: $e');
-        }
+      if (_currentIndex >= 0 && _currentIndex < _songs.length && _position.inSeconds > 5) {
+        final prevSong = _songs[_currentIndex];
+        final watchDuration = _position.inSeconds;
+
+        RecommendationEngine.instance.recordInteraction(SongInteraction(
+          songId: prevSong.id,
+          artist: prevSong.artist,
+          language: prevSong.language,
+          type: watchDuration < 30 ? InteractionType.skip : InteractionType.watch,
+          watchDuration: watchDuration,
+          totalDuration: _duration.inSeconds > 0 ? _duration.inSeconds : int.tryParse(prevSong.duration) ?? 0,
+          timestamp: DateTime.now(),
+          isSession: true,
+        ));
       }
-      if (!played) {
-        await _resetPlayer();
-        if (mounted) {
-          setState(() => _isBuffering = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Unable to play "${song.title}". Try another song.'),
-              duration: const Duration(seconds: 2),
-            ),
-          );
+
+      setState(() {
+        _currentIndex = index;
+        _isBuffering = true;
+        _duration = Duration.zero;
+        _position = Duration.zero;
+      });
+
+      final song = _songs[index];
+
+      if (song.audioUrl.isNotEmpty) {
+        bool played = false;
+        for (final playUrl in JioSaavnApi.getPlayableUrls(song.audioUrl)) {
+          if (requestId != _playRequestId) return;
+          try {
+            debugPrint('Trying URL: $playUrl');
+            await _audioPlayer.stop();
+            await _audioPlayer.setUrl(playUrl).timeout(const Duration(seconds: 20));
+            await _audioPlayer.play();
+            await _audioPlayer.setVolume(_volume);
+            if (requestId != _playRequestId) return;
+            played = true;
+            _audioHandler.setMediaItem(
+              id: song.id,
+              title: song.title,
+              artist: song.artist,
+              album: song.album,
+              artUri: song.imageUrl,
+            );
+            WidgetHelper.updateWidget(
+              title: song.title,
+              artist: song.artist,
+              isPlaying: true,
+              imageUrl: song.imageUrl,
+            );
+            break;
+          } catch (e) {
+            debugPrint('Failed URL $playUrl: $e');
+          }
         }
+        if (!played) {
+          if (requestId != _playRequestId) return;
+          await _resetPlayer();
+          if (mounted) {
+            setState(() => _isBuffering = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Unable to play "${song.title}". Try another song.'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+        }
+      } else {
+        if (mounted && requestId == _playRequestId) setState(() => _isBuffering = false);
       }
-    } else {
-      if (mounted) setState(() => _isBuffering = false);
-    }
     } catch (e) {
       debugPrint('Error playing song: $e');
-      if (mounted) {
+      if (mounted && requestId == _playRequestId) {
         setState(() => _isBuffering = false);
       }
-    } finally {
-      _isPlayingSong = false;
     }
   }
 
@@ -4216,6 +4215,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                                 setState(() {
                                   _discoverMix = mix;
                                   _songs = mix;
+                                  _currentIndex = 0;
                                   _currentCategory = 'Discover Mix';
                                 });
                               }
@@ -4246,6 +4246,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
                       if (playlist.id == 'discover_mix') {
                         setState(() {
                           _songs = _discoverMix;
+                          _currentIndex = 0;
                           _currentCategory = 'Discover Mix';
                         });
                       }
