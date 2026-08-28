@@ -133,7 +133,7 @@ class AudioPlayerHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         androidNotificationChannelName: 'Keyan Music Playback',
         androidNotificationChannelDescription: 'Controls for Keyan Music',
         androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
+        androidStopForegroundOnPause: false,
         androidNotificationIcon: 'ic_notification',
       ),
     );

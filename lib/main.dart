@@ -1958,6 +1958,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   double _volume = 1.0;
   double _crossfadeDuration = 0.0;
   List<Song> _userQueue = [];
+  bool _isPlayingSong = false;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get accent => _isDark ? AppTheme.accent : AppTheme.accentLight;
@@ -2247,21 +2248,29 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       final fadeSteps = 20;
       final stepDuration = Duration(milliseconds: (_crossfadeDuration * 1000 / fadeSteps).toInt());
       for (int i = 0; i < fadeSteps; i++) {
-        if (!mounted) return;
-        final newVol = _volume * (1.0 - (i + 1) / fadeSteps);
-        await _audioPlayer.setVolume(newVol.clamp(0.0, 1.0));
+        if (!mounted || !_crossfadeTriggered) return;
+        try {
+          final newVol = _volume * (1.0 - (i + 1) / fadeSteps);
+          await _audioPlayer.setVolume(newVol.clamp(0.0, 1.0));
+        } catch (_) {}
         await Future.delayed(stepDuration);
       }
     }
-    _crossfadeTriggered = false;
-    _playNext();
+    if (_crossfadeTriggered) {
+      _crossfadeTriggered = false;
+      _playNext();
+    }
   }
 
   Future<void> _playSong(int index) async {
     _crossfadeTriggered = false;
+    if (_isPlayingSong) return;
     if (index < 0 || index >= _songs.length) return;
+    _isPlayingSong = true;
     _songCompleteGuard = false;
     _searchDebounce?.cancel();
+    
+    try {
     
     if (_currentIndex >= 0 && _currentIndex < _songs.length && _position.inSeconds > 5) {
       final prevSong = _songs[_currentIndex];
@@ -2287,13 +2296,6 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     });
     
     final song = _songs[index];
-    _audioHandler.setMediaItem(
-      id: song.id,
-      title: song.title,
-      artist: song.artist,
-      album: song.album,
-      artUri: song.imageUrl,
-    );
     
     if (song.audioUrl.isNotEmpty) {
       bool played = false;
@@ -2301,10 +2303,17 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
         try {
           debugPrint('Trying URL: $playUrl');
           await _audioPlayer.stop();
-          await _audioPlayer.setUrl(playUrl);
+          await _audioPlayer.setUrl(playUrl).timeout(const Duration(seconds: 20));
           await _audioPlayer.play();
           await _audioPlayer.setVolume(_volume);
           played = true;
+          _audioHandler.setMediaItem(
+            id: song.id,
+            title: song.title,
+            artist: song.artist,
+            album: song.album,
+            artUri: song.imageUrl,
+          );
           WidgetHelper.updateWidget(
             title: song.title,
             artist: song.artist,
@@ -2331,6 +2340,14 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     } else {
       if (mounted) setState(() => _isBuffering = false);
     }
+    } catch (e) {
+      debugPrint('Error playing song: $e');
+      if (mounted) {
+        setState(() => _isBuffering = false);
+      }
+    } finally {
+      _isPlayingSong = false;
+    }
   }
 
   Future<void> _resetPlayer() async {
@@ -2346,10 +2363,21 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
 
   Future<void> _togglePlayPause() async {
     HapticFeedback.lightImpact();
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.play();
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+      } else if (_currentIndex >= 0 &&
+          _currentIndex < _songs.length &&
+          _audioPlayer.processingState == ProcessingState.idle) {
+        await _playSong(_currentIndex);
+      } else {
+        await _audioPlayer.play();
+      }
+    } catch (e) {
+      debugPrint('Play/pause error: $e');
+      if (_currentIndex >= 0 && _currentIndex < _songs.length) {
+        await _playSong(_currentIndex);
+      }
     }
     if (_currentIndex >= 0 && _currentIndex < _songs.length) {
       WidgetHelper.updateWidget(
@@ -2796,8 +2824,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     }
 
     if (_repeatMode == RepeatMode.one) {
-      await _audioPlayer.seek(Duration.zero);
-      await _audioPlayer.play();
+      try {
+        await _audioPlayer.seek(Duration.zero);
+        await _audioPlayer.play();
+      } catch (e) {
+        debugPrint('Repeat-one error: $e');
+        if (_currentIndex >= 0 && _currentIndex < _songs.length) {
+          await _playSong(_currentIndex);
+        }
+      }
       return;
     }
 
@@ -2830,7 +2865,11 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
   Future<void> _playPrevious() async {
     HapticFeedback.lightImpact();
     if (_position.inSeconds > 3) {
-      await _audioPlayer.seek(Duration.zero);
+      try {
+        await _audioPlayer.seek(Duration.zero);
+      } catch (e) {
+        debugPrint('Seek error: $e');
+      }
       return;
     }
 
@@ -2975,6 +3014,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     
     setState(() {
       _songs = songs.isNotEmpty ? songs : _songs;
+      if (_currentIndex >= _songs.length) _currentIndex = 0;
       _isLoading = false;
     });
   }
@@ -3203,6 +3243,7 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
       setState(() {
         _songs = artistSongs;
         _currentCategory = artist;
+        if (_currentIndex >= artistSongs.length) _currentIndex = 0;
         _isLoading = false;
         _isSearching = false;
       });
@@ -5044,15 +5085,15 @@ class _MusicPlayerScreenState extends State<MusicPlayerScreen> with TickerProvid
     
     return GestureDetector(
       onTap: () {
-        if (_isSearching) {
-          setState(() {
+        setState(() {
+          if (_isSearching) {
             _songs = List.from(_searchResults);
-            _currentIndex = index;
             _isSearching = false;
             _searchController.clear();
-          });
-        }
-        _playSong(_isSearching ? _songs.indexOf(song) : index);
+          }
+          _currentIndex = index;
+        });
+        _playSong(index);
       },
       onLongPress: () {
         HapticFeedback.mediumImpact();
